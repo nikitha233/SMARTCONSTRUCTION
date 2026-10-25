@@ -1444,6 +1444,21 @@ img {
 .fs-16 {
   font-size: 16px;
 }
+
+@media (max-width: 768px) {
+  button,
+  .btn,
+  .btn-icon,
+  .tab-btn,
+  .page-btn,
+  .nav-item,
+  input,
+  select,
+  textarea {
+    min-width: 44px;
+  }
+}
+
 @keyframes skeleton-shimmer {
     100% { background-position: -200% 0; }
 }
