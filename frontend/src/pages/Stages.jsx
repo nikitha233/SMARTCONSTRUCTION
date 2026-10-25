@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react';
-import { stagesApi, projectsApi } from '../services/api';
-import { useToast } from '../context/ToastContext';
-import { useAuth } from '../context/AuthContext';
+import { useCallback, useEffect, useState } from 'react';
+import { useRequestController } from '../hooks/useRequestController';
+import { stagesApi, lookupApi } from '../services/api';
+import { useToast } from '../context/useToast';
+import { useAuth } from '../context/useAuth';
 import { formatDate } from '../utils/helpers';
-import { StatusBadge, ProgressBar, LoadingSpinner, EmptyState, ConfirmDialog, Modal, PageHeader, FormField } from '../components/UI';
-import { Plus, Search, Pencil, Trash2, HardHat, Filter } from 'lucide-react';
+import { StatusBadge, ProgressBar, SkeletonLoader, EmptyState, ConfirmDialog, Modal, PageHeader, FormField, DataTable } from '../components/UI';
+import { Plus, Pencil, Trash2, HardHat } from 'lucide-react';
+
+const TODAY_DATE = new Date().toISOString().slice(0, 10);
 
 const STATUS_OPTIONS = ['NotStarted', 'InProgress', 'Completed', 'Delayed', 'OnHold'];
 
@@ -12,7 +15,7 @@ const emptyForm = {
     projectId: '',
     stageName: '',
     stageOrder: 1,
-    plannedStartDate: new Date().toISOString().slice(0, 10),
+    plannedStartDate: TODAY_DATE,
     plannedEndDate: '',
     actualStartDate: '',
     actualEndDate: '',
@@ -35,35 +38,39 @@ export default function Stages() {
 
     const toast = useToast();
     const { isAdminOrManager } = useAuth();
+    const createRequestController = useRequestController();
 
-    const loadProjects = async () => {
+    const loadProjects = useCallback(async (signal) => {
         try {
-            const res = await projectsApi.getAll();
-            setProjects(res.data);
+            const res = await lookupApi.getAll({ signal });
+            setProjects(res.data.projects);
         } catch {
-            toast.error('Failed to load projects');
+            if (!signal?.aborted) toast.error('Failed to load projects');
         }
-    };
+    }, [toast]);
 
-    const loadStages = async () => {
-        setLoading(true);
+    const loadStages = useCallback(async (signal) => {
         try {
-            const res = await stagesApi.getAll(selectedProject ? { projectId: selectedProject } : {});
+            const res = await stagesApi.getAll(selectedProject ? { projectId: selectedProject } : {}, { signal });
             setStages(res.data);
         } catch {
-            toast.error('Failed to load stages');
+            if (!signal?.aborted) toast.error('Failed to load stages');
         } finally {
-            setLoading(false);
+            if (!signal?.aborted) setLoading(false);
         }
-    };
+    }, [selectedProject, toast]);
 
     useEffect(() => {
-        loadProjects();
-    }, []);
+        const controller = createRequestController();
+        queueMicrotask(() => { if (!controller.signal.aborted) loadProjects(controller.signal); });
+        return () => controller.abort();
+    }, [createRequestController, loadProjects]);
 
     useEffect(() => {
-        loadStages();
-    }, [selectedProject]);
+        const controller = createRequestController();
+        queueMicrotask(() => { if (!controller.signal.aborted) loadStages(controller.signal); });
+        return () => controller.abort();
+    }, [createRequestController, loadStages]);
 
     const openCreate = () => {
         setEditStage(null);
@@ -174,7 +181,7 @@ export default function Stages() {
             </div>
 
             {loading ? (
-                <LoadingSpinner />
+                <SkeletonLoader />
             ) : stages.length === 0 ? (
                 <EmptyState
                     icon={<HardHat size={48} color="var(--text-muted)" />}
@@ -190,8 +197,8 @@ export default function Stages() {
                 />
             ) : (
                 <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                    <div className="table-responsive">
-                        <table className="data-table">
+                    <DataTable className="table-responsive">
+<table className="data-table">
                             <thead>
                                 <tr>
                                     <th>Order</th>
@@ -255,7 +262,7 @@ export default function Stages() {
                                 ))}
                             </tbody>
                         </table>
-                    </div>
+</DataTable>
                 </div>
             )}
 

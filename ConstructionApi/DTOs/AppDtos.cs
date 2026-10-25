@@ -1,8 +1,13 @@
 namespace ConstructionApi.DTOs;
 
+public record PagedResult<T>(List<T> Items, int TotalCount, int Page, int PageSize);
+public record ProjectLookupDto(int Id, string Name);
+public record WorkerLookupDto(int Id, string FullName);
+
 // Auth DTOs
 public record LoginDto(string Email, string Password);
 public record RegisterDto(string Email, string Password, string FullName, string Role);
+public record SignUpDto(string Email, string Password, string FullName);
 public record AuthResponseDto(string Token, string UserId, string Email, string FullName, string Role, DateTime Expiry);
 public record ChangePasswordDto(string CurrentPassword, string NewPassword);
 

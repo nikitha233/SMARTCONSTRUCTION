@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { workersApi } from '../services/api';
-import { useToast } from '../context/ToastContext';
-import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/useToast';
+import { useAuth } from '../context/useAuth';
 import { formatCurrency, formatDate } from '../utils/helpers';
-import { StatusBadge, LoadingSpinner, EmptyState, ConfirmDialog, Modal, PageHeader, FormField } from '../components/UI';
-import { Plus, Search, Pencil, Trash2, Users, Phone, Calendar, Banknote } from 'lucide-react';
+import { StatusBadge, SkeletonLoader, EmptyState, ConfirmDialog, Modal, PageHeader, FormField, Pagination, DataTable } from '../components/UI';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useApi } from '../hooks/useApi';
+import { Plus, Search, Pencil, Trash2, Users, Phone } from 'lucide-react';
+
+const TODAY_DATE = new Date().toISOString().slice(0, 10);
 
 const TRADES = [
     'Bar Bender',
@@ -20,21 +24,23 @@ const TRADES = [
 ];
 
 const STATUSES = ['Active', 'Inactive', 'Suspended'];
+const EMPTY_PAGE = { items: [], totalCount: 0 };
 
 const emptyForm = {
     fullName: '',
     phoneNumber: '',
     jobTitle: 'Bar Bender',
-    joiningDate: new Date().toISOString().slice(0, 10),
+    joiningDate: TODAY_DATE,
     dailyWage: 750,
     employmentStatus: 'Active',
 };
 
 export default function Workers() {
-    const [workers, setWorkers] = useState([]);
-    const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [page, setPage] = useState(1);
+    const debouncedSearch = useDebouncedValue(search);
+    const pageSize = 20;
     const [modalOpen, setModalOpen] = useState(false);
     const [editWorker, setEditWorker] = useState(null);
     const [form, setForm] = useState(emptyForm);
@@ -44,17 +50,17 @@ export default function Workers() {
     const toast = useToast();
     const { isAdminOrManager } = useAuth();
 
-    const loadWorkers = () => {
-        setLoading(true);
-        workersApi.getAll({ search, status: statusFilter })
-            .then(res => setWorkers(res.data))
-            .catch(() => toast.error('Failed to load workers'))
-            .finally(() => setLoading(false));
-    };
+    const fetchWorkers = useCallback(async (signal) => {
+        const response = await workersApi.getAll({ search: debouncedSearch, status: statusFilter, page, pageSize }, { signal });
+        return { items: response.data.items, totalCount: response.data.totalCount };
+    }, [debouncedSearch, page, pageSize, statusFilter]);
+    const { data: workerPage, loading, error, refetch } = useApi(fetchWorkers, { initialData: EMPTY_PAGE });
+    const workers = workerPage.items;
+    const totalCount = workerPage.totalCount;
 
     useEffect(() => {
-        loadWorkers();
-    }, [search, statusFilter]);
+        if (error) toast.error('Failed to load workers');
+    }, [error, toast]);
 
     const openCreate = () => {
         setEditWorker(null);
@@ -98,7 +104,7 @@ export default function Workers() {
                 toast.success('Worker added to muster roll');
             }
             setModalOpen(false);
-            loadWorkers();
+            refetch();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Failed to save worker');
         } finally {
@@ -112,7 +118,7 @@ export default function Workers() {
             await workersApi.delete(deleteId);
             toast.success('Worker removed');
             setDeleteId(null);
-            loadWorkers();
+            refetch();
         } catch {
             toast.error('Failed to delete worker');
         }
@@ -141,14 +147,14 @@ export default function Workers() {
                         placeholder="Search by worker name or trade..."
                         style={{ paddingLeft: 36 }}
                         value={search}
-                        onChange={e => setSearch(e.target.value)}
+                        onChange={e => { setSearch(e.target.value); setPage(1); }}
                     />
                 </div>
                 <div style={{ width: 180 }}>
                     <select
                         className="form-control"
                         value={statusFilter}
-                        onChange={e => setStatusFilter(e.target.value)}
+                        onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
                     >
                         <option value="">All Statuses</option>
                         {STATUSES.map(s => (
@@ -159,7 +165,7 @@ export default function Workers() {
             </div>
 
             {loading ? (
-                <LoadingSpinner />
+                <SkeletonLoader />
             ) : workers.length === 0 ? (
                 <EmptyState
                     icon={<Users size={48} color="var(--text-muted)" />}
@@ -175,8 +181,8 @@ export default function Workers() {
                 />
             ) : (
                 <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                    <div className="table-responsive">
-                        <table className="data-table">
+                    <DataTable className="table-responsive">
+<table className="data-table">
                             <thead>
                                 <tr>
                                     <th>Worker Name</th>
@@ -251,9 +257,11 @@ export default function Workers() {
                                 ))}
                             </tbody>
                         </table>
-                    </div>
+</DataTable>
                 </div>
             )}
+
+            <Pagination page={page} pageSize={pageSize} totalCount={totalCount} onPageChange={setPage} />
 
             {/* Worker Modal */}
             <Modal

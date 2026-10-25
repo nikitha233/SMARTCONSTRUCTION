@@ -18,7 +18,7 @@ public class StagesController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<StageDto>>> GetAll([FromQuery] int? projectId)
     {
-        var query = _db.ConstructionStages.AsQueryable();
+        var query = _db.ConstructionStages.AsNoTracking().AsQueryable();
         if (projectId.HasValue) query = query.Where(s => s.ProjectId == projectId.Value);
         var stages = await query.OrderBy(s => s.StageOrder)
             .Select(s => ToDto(s)).ToListAsync();
@@ -28,7 +28,7 @@ public class StagesController : ControllerBase
     [HttpGet("{id}")]
     public async Task<ActionResult<StageDto>> GetById(int id)
     {
-        var s = await _db.ConstructionStages.FindAsync(id);
+        var s = await _db.ConstructionStages.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id);
         if (s == null) return NotFound();
         return Ok(ToDto(s));
     }

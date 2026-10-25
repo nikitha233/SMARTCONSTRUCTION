@@ -1,12 +1,20 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using ConstructionApi.Models;
 
 namespace ConstructionApi.Data;
 
 public class AppDbContext : IdentityDbContext<ApplicationUser>
 {
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+    public const string DashboardCacheKey = "dashboard:data";
+
+    private readonly IMemoryCache _cache;
+
+    public AppDbContext(DbContextOptions<AppDbContext> options, IMemoryCache cache) : base(options)
+    {
+        _cache = cache;
+    }
 
     public DbSet<Project> Projects { get; set; }
     public DbSet<ConstructionStage> ConstructionStages { get; set; }
@@ -30,11 +38,16 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<Project>()
             .HasIndex(p => p.ProjectCode)
             .IsUnique();
+        modelBuilder.Entity<Project>().HasIndex(p => p.Status);
 
         // Equipment unique code
         modelBuilder.Entity<Equipment>()
             .HasIndex(e => e.EquipmentCode)
             .IsUnique();
+        modelBuilder.Entity<Equipment>().HasIndex(e => e.NextMaintenanceDate);
+        modelBuilder.Entity<Expense>().HasIndex(e => new { e.ProjectId, e.ExpenseDate });
+        modelBuilder.Entity<WorkerAttendance>().HasIndex(a => new { a.WorkerId, a.AttendanceDate });
+        modelBuilder.Entity<Material>().HasIndex(m => m.IsActive);
 
         // Cascade deletes configuration
         modelBuilder.Entity<ConstructionStage>()
@@ -108,5 +121,23 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .WithMany(e => e.MaintenanceRecords)
             .HasForeignKey(emr => emr.EquipmentId)
             .OnDelete(DeleteBehavior.Cascade);
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        var hasChanges = ChangeTracker.HasChanges();
+        var result = base.SaveChanges(acceptAllChangesOnSuccess);
+        if (hasChanges) _cache.Remove(DashboardCacheKey);
+        return result;
+    }
+
+    public override async Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        var hasChanges = ChangeTracker.HasChanges();
+        var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        if (hasChanges) _cache.Remove(DashboardCacheKey);
+        return result;
     }
 }

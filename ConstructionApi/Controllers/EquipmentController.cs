@@ -16,21 +16,37 @@ public class EquipmentController : ControllerBase
     public EquipmentController(AppDbContext db) => _db = db;
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<EquipmentDto>>> GetAll(
-        [FromQuery] string? category, [FromQuery] string? availability)
+    public async Task<ActionResult<PagedResult<EquipmentDto>>> GetAll(
+        [FromQuery] string? category, [FromQuery] string? availability, [FromQuery] string? search,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
+        [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null)
     {
-        var query = _db.Equipment.Where(e => e.IsActive).AsQueryable();
+        var query = _db.Equipment.AsNoTracking().Where(e => e.IsActive).AsQueryable();
         if (!string.IsNullOrEmpty(category)) query = query.Where(e => e.Category == category);
         if (!string.IsNullOrEmpty(availability)) query = query.Where(e => e.Availability == availability);
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(e => e.Name.Contains(search) || e.EquipmentCode.Contains(search) || e.Category.Contains(search));
 
-        var items = await query.OrderBy(e => e.Name).Select(e => ToDto(e)).ToListAsync();
-        return Ok(items);
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var total = await query.CountAsync();
+        page = Math.Min(page, Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)));
+        var descending = string.Equals(sortDirection, "desc", StringComparison.OrdinalIgnoreCase);
+        var ordered = (sortBy?.ToLowerInvariant()) switch
+        {
+            "category" => descending ? query.OrderByDescending(e => e.Category) : query.OrderBy(e => e.Category),
+            "availability" => descending ? query.OrderByDescending(e => e.Availability) : query.OrderBy(e => e.Availability),
+            _ => descending ? query.OrderByDescending(e => e.Name) : query.OrderBy(e => e.Name)
+        };
+        var items = await ordered.Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(e => ToDto(e)).ToListAsync();
+        return Ok(new PagedResult<EquipmentDto>(items, total, page, pageSize));
     }
 
     [HttpGet("{id}")]
     public async Task<ActionResult<EquipmentDto>> GetById(int id)
     {
-        var e = await _db.Equipment.FindAsync(id);
+        var e = await _db.Equipment.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id);
         if (e == null) return NotFound();
         return Ok(ToDto(e));
     }
@@ -93,6 +109,7 @@ public class EquipmentController : ControllerBase
     public async Task<ActionResult> GetMaintenance(int id)
     {
         var records = await _db.EquipmentMaintenanceRecords
+            .AsNoTracking()
             .Where(r => r.EquipmentId == id)
             .OrderByDescending(r => r.MaintenanceDate)
             .ToListAsync();

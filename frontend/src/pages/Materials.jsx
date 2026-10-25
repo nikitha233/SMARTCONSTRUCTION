@@ -1,21 +1,30 @@
-import { useEffect, useState } from 'react';
-import { materialsApi, transactionsApi, projectsApi } from '../services/api';
-import { useToast } from '../context/ToastContext';
-import { useAuth } from '../context/AuthContext';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { materialsApi, transactionsApi, lookupApi } from '../services/api';
+import { useToast } from '../context/useToast';
+import { useAuth } from '../context/useAuth';
 import { formatCurrency, formatDate } from '../utils/helpers';
-import { StatusBadge, LoadingSpinner, EmptyState, ConfirmDialog, Modal, PageHeader } from '../components/UI';
+import { StatusBadge, SkeletonLoader, EmptyState, Modal, PageHeader, Pagination, DataTable } from '../components/UI';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useRequestController } from '../hooks/useRequestController';
+import { useApi } from '../hooks/useApi';
 import { Plus, Search, Package, AlertTriangle, RefreshCw } from 'lucide-react';
+
+const TODAY_DATE = new Date().toISOString().slice(0, 10);
 
 const CATEGORIES = ['Binding Material', 'Structural', 'Masonry', 'Aggregate', 'Finishing', 'Electrical', 'Plumbing', 'Flooring', 'Wood Work', 'Other'];
 const TXN_TYPES = ['Purchase', 'Consumption', 'Adjustment', 'Return'];
+const EMPTY_PAGE = { items: [], totalCount: 0 };
 
 export default function Materials() {
-    const [materials, setMaterials] = useState([]);
     const [projects, setProjects] = useState([]);
-    const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [catFilter, setCatFilter] = useState('');
     const [stockFilter, setStockFilter] = useState('');
+    const [page, setPage] = useState(1);
+    const debouncedSearch = useDebouncedValue(search);
+    const pageSize = 20;
+    const createRequestController = useRequestController();
+    const historyControllerRef = useRef(null);
     const [matModal, setMatModal] = useState(false);
     const [txnModal, setTxnModal] = useState(false);
     const [txnHistory, setTxnHistory] = useState([]);
@@ -23,23 +32,30 @@ export default function Materials() {
     const [selectedMat, setSelectedMat] = useState(null);
     const [editMat, setEditMat] = useState(null);
     const [matForm, setMatForm] = useState({});
-    const [txnForm, setTxnForm] = useState({ materialId: '', projectId: '', transactionType: 'Purchase', quantity: '', unitCost: '', transactionDate: new Date().toISOString().slice(0, 10), notes: '' });
+    const [txnForm, setTxnForm] = useState({ materialId: '', projectId: '', transactionType: 'Purchase', quantity: '', unitCost: '', transactionDate: TODAY_DATE, notes: '' });
     const [saving, setSaving] = useState(false);
     const toast = useToast();
     const { hasRole } = useAuth();
     const canManage = hasRole('Admin', 'StoreManager');
 
-    const load = () => {
-        setLoading(true);
-        Promise.all([
-            materialsApi.getAll({ search, category: catFilter, stockStatus: stockFilter }),
-            projectsApi.getAll(),
-        ]).then(([m, p]) => { setMaterials(m.data); setProjects(p.data); })
-            .catch(() => toast.error('Failed to load data'))
-            .finally(() => setLoading(false));
-    };
+    const fetchMaterials = useCallback(async (signal) => {
+        const response = await materialsApi.getAll({ search: debouncedSearch, category: catFilter, stockStatus: stockFilter, page, pageSize }, { signal });
+        return { items: response.data.items, totalCount: response.data.totalCount };
+    }, [catFilter, debouncedSearch, page, pageSize, stockFilter]);
+    const { data: materialPage, loading, error, refetch } = useApi(fetchMaterials, { initialData: EMPTY_PAGE });
+    const materials = materialPage.items;
+    const totalCount = materialPage.totalCount;
 
-    useEffect(() => { load(); }, [search, catFilter, stockFilter]);
+    useEffect(() => {
+        if (error) toast.error('Failed to load data');
+    }, [error, toast]);
+    useEffect(() => {
+        const controller = createRequestController();
+        lookupApi.getAll({ signal: controller.signal })
+            .then(r => setProjects(r.data.projects))
+            .catch(() => { if (!controller.signal.aborted) toast.error('Failed to load projects'); });
+        return () => controller.abort();
+    }, [createRequestController, toast]);
 
     const openTxn = (mat) => {
         setSelectedMat(mat);
@@ -48,10 +64,17 @@ export default function Materials() {
     };
 
     const openHistory = async (mat) => {
+        historyControllerRef.current?.abort();
+        const controller = createRequestController();
+        historyControllerRef.current = controller;
         setSelectedMat(mat);
-        const r = await materialsApi.getTransactions(mat.id);
-        setTxnHistory(r.data);
-        setHistoryOpen(true);
+        try {
+            const r = await materialsApi.getTransactions(mat.id, { signal: controller.signal });
+            setTxnHistory(r.data);
+            setHistoryOpen(true);
+        } catch {
+            if (!controller.signal.aborted) toast.error('Failed to load transaction history');
+        }
     };
 
     const openCreate = () => { setEditMat(null); setMatForm({ name: '', category: '', unit: '', minimumStockThreshold: 0, unitCost: 0, supplier: '', storageLocation: '' }); setMatModal(true); };
@@ -63,7 +86,7 @@ export default function Materials() {
             if (editMat) await materialsApi.update(editMat.id, matForm);
             else await materialsApi.create(matForm);
             toast.success(editMat ? 'Material updated' : 'Material added');
-            setMatModal(false); load();
+            setMatModal(false); refetch();
         } catch (err) { toast.error(err.response?.data?.message || 'Failed to save'); }
         finally { setSaving(false); }
     };
@@ -74,14 +97,14 @@ export default function Materials() {
         try {
             await transactionsApi.create({ ...txnForm, quantity: parseFloat(txnForm.quantity), unitCost: parseFloat(txnForm.unitCost || 0), projectId: txnForm.projectId || null });
             toast.success('Transaction recorded successfully');
-            setTxnModal(false); load();
+            setTxnModal(false); refetch();
         } catch (err) { toast.error(err.response?.data?.message || 'Failed to record transaction'); }
         finally { setSaving(false); }
     };
 
     return (
         <div>
-            <PageHeader title="Materials" subtitle={`${materials.length} materials · ${materials.filter(m => m.currentStock <= m.minimumStockThreshold).length} low stock`}>
+            <PageHeader title="Materials" subtitle={`${totalCount} materials · ${materials.filter(m => m.currentStock <= m.minimumStockThreshold).length} low stock on this page`}>
                 {canManage && (
                     <>
                         <button className="btn btn-outline btn-sm" onClick={() => setTxnModal(true)}><RefreshCw size={15} /> New Transaction</button>
@@ -93,28 +116,33 @@ export default function Materials() {
             <div className="filter-bar">
                 <div className="search-input">
                     <Search size={16} color="var(--text-muted)" />
-                    <input placeholder="Search materials…" value={search} onChange={e => setSearch(e.target.value)} />
+                    <input placeholder="Search materials…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
                 </div>
-                <select className="filter-select" value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+                <select className="filter-select" value={catFilter} onChange={e => { setCatFilter(e.target.value); setPage(1); }}>
                     <option value="">All Categories</option>
                     {CATEGORIES.map(c => <option key={c}>{c}</option>)}
                 </select>
-                <select className="filter-select" value={stockFilter} onChange={e => setStockFilter(e.target.value)}>
+                <select className="filter-select" value={stockFilter} onChange={e => { setStockFilter(e.target.value); setPage(1); }}>
                     <option value="">All Stock</option>
                     <option value="low">Low Stock Only</option>
                 </select>
             </div>
 
-            {loading ? <LoadingSpinner /> : (
+            {loading ? <SkeletonLoader /> : (
                 <div className="card">
-                    <div className="table-container">
-                        <table className="data-table">
+                    <DataTable className="table-container">
+<table className="data-table">
                             <thead>
                                 <tr><th>Material</th><th>Category</th><th>Stock</th><th>Min. Threshold</th><th>Unit Cost</th><th>Total Value</th><th>Supplier</th><th>Status</th><th>Actions</th></tr>
                             </thead>
                             <tbody>
                                 {materials.length === 0 ? (
-                                    <tr><td colSpan={9}><EmptyState icon={<Package size={40} />} title="No materials found" /></td></tr>
+                                    <tr><td colSpan={9}><EmptyState
+                                        icon={<Package size={40} />}
+                                        title="No materials found"
+                                        description="Add a material to start tracking inventory."
+                                        action={canManage && <button className="btn btn-primary" onClick={openCreate}>Add Material</button>}
+                                    /></td></tr>
                                 ) : materials.map(m => {
                                     const isLow = m.currentStock <= m.minimumStockThreshold;
                                     return (
@@ -144,9 +172,11 @@ export default function Materials() {
                                 })}
                             </tbody>
                         </table>
-                    </div>
+</DataTable>
                 </div>
             )}
+
+            <Pagination page={page} pageSize={pageSize} totalCount={totalCount} onPageChange={setPage} />
 
             {/* Add/Edit Material Modal */}
             <Modal isOpen={matModal} onClose={() => setMatModal(false)} title={editMat ? 'Edit Material' : 'Add Material'}
@@ -208,8 +238,8 @@ export default function Materials() {
 
             {/* Transaction History Modal */}
             <Modal isOpen={historyOpen} onClose={() => setHistoryOpen(false)} title={`Transaction History: ${selectedMat?.name}`} maxWidth={720}>
-                <div className="table-container">
-                    <table className="data-table">
+                <DataTable className="table-container">
+<table className="data-table">
                         <thead><tr><th>Date</th><th>Type</th><th>Quantity</th><th>Unit Cost</th><th>Total</th><th>Project</th><th>By</th></tr></thead>
                         <tbody>
                             {txnHistory.map(t => (
@@ -226,7 +256,7 @@ export default function Materials() {
                             {txnHistory.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No transactions recorded</td></tr>}
                         </tbody>
                     </table>
-                </div>
+</DataTable>
             </Modal>
         </div>
     );

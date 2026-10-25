@@ -1,13 +1,12 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { AuthContext } from './authContextValue';
 import { authApi } from '../services/api';
-
-const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(() => {
         try { return JSON.parse(localStorage.getItem('user')); } catch { return null; }
     });
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(() => Boolean(localStorage.getItem('token')));
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -16,19 +15,19 @@ export function AuthProvider({ children }) {
                 .then(res => setUser(res.data))
                 .catch(() => { localStorage.removeItem('token'); localStorage.removeItem('user'); setUser(null); })
                 .finally(() => setLoading(false));
-        } else {
-            setLoading(false);
         }
     }, []);
 
-    const login = async (email, password) => {
-        const res = await authApi.login({ email, password });
+    const saveSession = (res) => {
         const { token, ...userData } = res.data;
         localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(userData));
         setUser(userData);
         return userData;
     };
+
+    const login = async (email, password) => saveSession(await authApi.login({ email, password }));
+    const signup = async (fullName, email, password) => saveSession(await authApi.signup({ fullName, email, password }));
 
     const logout = () => {
         localStorage.removeItem('token');
@@ -41,10 +40,8 @@ export function AuthProvider({ children }) {
     const isAdminOrManager = () => hasRole('Admin', 'ProjectManager');
 
     return (
-        <AuthContext.Provider value={{ user, login, logout, loading, hasRole, isAdmin, isAdminOrManager }}>
+        <AuthContext.Provider value={{ user, login, signup, logout, loading, hasRole, isAdmin, isAdminOrManager }}>
             {children}
         </AuthContext.Provider>
     );
 }
-
-export const useAuth = () => useContext(AuthContext);

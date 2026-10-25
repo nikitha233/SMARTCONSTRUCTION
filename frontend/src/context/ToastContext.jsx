@@ -1,9 +1,10 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 
-const ToastContext = createContext(null);
+import { ToastContext } from './toastContextValue';
 
 export function ToastProvider({ children }) {
     const [toasts, setToasts] = useState([]);
+    const recentApiToastAt = useRef(0);
 
     const addToast = useCallback((message, type = 'info', duration = 3500) => {
         const id = Date.now();
@@ -11,12 +12,26 @@ export function ToastProvider({ children }) {
         setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
     }, []);
 
-    const toast = {
+    useEffect(() => {
+        const onApiToast = (event) => {
+            const { message, type = 'error' } = event.detail || {};
+            if (message) {
+                recentApiToastAt.current = Date.now();
+                addToast(message, type);
+            }
+        };
+        window.addEventListener('app:toast', onApiToast);
+        return () => window.removeEventListener('app:toast', onApiToast);
+    }, [addToast]);
+
+    const toast = useMemo(() => ({
         success: (msg) => addToast(msg, 'success'),
-        error: (msg) => addToast(msg, 'error'),
+        error: (msg) => {
+            if (Date.now() - recentApiToastAt.current > 500) addToast(msg, 'error');
+        },
         warning: (msg) => addToast(msg, 'warning'),
         info: (msg) => addToast(msg, 'info'),
-    };
+    }), [addToast]);
 
     return (
         <ToastContext.Provider value={toast}>
@@ -31,5 +46,3 @@ export function ToastProvider({ children }) {
         </ToastContext.Provider>
     );
 }
-
-export const useToast = () => useContext(ToastContext);

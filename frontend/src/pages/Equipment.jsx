@@ -1,10 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { equipmentApi } from '../services/api';
-import { useToast } from '../context/ToastContext';
-import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/useToast';
+import { useAuth } from '../context/useAuth';
 import { formatCurrency, formatDate } from '../utils/helpers';
-import { StatusBadge, LoadingSpinner, EmptyState, ConfirmDialog, Modal, PageHeader, FormField } from '../components/UI';
-import { Plus, Search, Pencil, Trash2, Truck, Wrench, Shield, CheckCircle } from 'lucide-react';
+import { StatusBadge, SkeletonLoader, EmptyState, ConfirmDialog, Modal, PageHeader, FormField, Pagination } from '../components/UI';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useRequestController } from '../hooks/useRequestController';
+import { useApi } from '../hooks/useApi';
+import { Plus, Search, Pencil, Trash2, Truck, Wrench } from 'lucide-react';
+
+const TODAY_DATE = new Date().toISOString().slice(0, 10);
 
 const CATEGORIES = [
     'Lifting Equipment',
@@ -19,6 +24,7 @@ const CATEGORIES = [
 const AVAILABILITY_OPTS = ['Available', 'Assigned', 'UnderMaintenance', 'Unavailable'];
 const CONDITION_OPTS = ['Good', 'Fair', 'Poor'];
 const OWNERSHIP_OPTS = ['Owned', 'Rented'];
+const EMPTY_PAGE = { items: [], totalCount: 0 };
 
 const emptyForm = {
     name: '',
@@ -32,7 +38,7 @@ const emptyForm = {
 };
 
 const emptyMaintForm = {
-    maintenanceDate: new Date().toISOString().slice(0, 10),
+    maintenanceDate: TODAY_DATE,
     maintenanceType: 'Routine Servicing',
     cost: 5000,
     performedBy: '',
@@ -41,10 +47,14 @@ const emptyMaintForm = {
 };
 
 export default function Equipment() {
-    const [equipment, setEquipment] = useState([]);
-    const [loading, setLoading] = useState(true);
     const [categoryFilter, setCategoryFilter] = useState('');
     const [availabilityFilter, setAvailabilityFilter] = useState('');
+    const [search, setSearch] = useState('');
+    const [page, setPage] = useState(1);
+    const debouncedSearch = useDebouncedValue(search);
+    const pageSize = 20;
+    const createRequestController = useRequestController();
+    const maintenanceControllerRef = useRef(null);
     const [modalOpen, setModalOpen] = useState(false);
     const [editItem, setEditItem] = useState(null);
     const [form, setForm] = useState(emptyForm);
@@ -57,21 +67,22 @@ export default function Equipment() {
     const [maintForm, setMaintForm] = useState(emptyMaintForm);
     const [maintLogs, setMaintLogs] = useState([]);
     const [maintLoading, setMaintLoading] = useState(false);
+    const [maintenanceSaving, setMaintenanceSaving] = useState(false);
 
     const toast = useToast();
     const { isAdminOrManager } = useAuth();
 
-    const loadEquipment = () => {
-        setLoading(true);
-        equipmentApi.getAll({ category: categoryFilter, availability: availabilityFilter })
-            .then(res => setEquipment(res.data))
-            .catch(() => toast.error('Failed to load equipment'))
-            .finally(() => setLoading(false));
-    };
+    const fetchEquipment = useCallback(async (signal) => {
+        const response = await equipmentApi.getAll({ category: categoryFilter, availability: availabilityFilter, search: debouncedSearch, page, pageSize }, { signal });
+        return { items: response.data.items, totalCount: response.data.totalCount };
+    }, [availabilityFilter, categoryFilter, debouncedSearch, page, pageSize]);
+    const { data: equipmentPage, loading, error, refetch } = useApi(fetchEquipment, { initialData: EMPTY_PAGE });
+    const equipment = equipmentPage.items;
+    const totalCount = equipmentPage.totalCount;
 
     useEffect(() => {
-        loadEquipment();
-    }, [categoryFilter, availabilityFilter]);
+        if (error) toast.error('Failed to load equipment');
+    }, [error, toast]);
 
     const openCreate = () => {
         setEditItem(null);
@@ -130,7 +141,7 @@ export default function Equipment() {
                 toast.success('Equipment registered to fleet');
             }
             setModalOpen(false);
-            loadEquipment();
+            refetch();
         } catch (err) {
             const errData = err.response?.data;
             let errMsg = errData?.message;
@@ -149,30 +160,34 @@ export default function Equipment() {
             await equipmentApi.delete(deleteId);
             toast.success('Equipment removed');
             setDeleteId(null);
-            loadEquipment();
+            refetch();
         } catch {
             toast.error('Failed to delete equipment');
         }
     };
 
     const openMaintenanceModal = async (eq) => {
+        maintenanceControllerRef.current?.abort();
+        const controller = createRequestController();
+        maintenanceControllerRef.current = controller;
         setSelectedEquipmentForMaint(eq);
         setMaintForm(emptyMaintForm);
         setMaintModalOpen(true);
         setMaintLoading(true);
         try {
-            const res = await equipmentApi.getMaintenance(eq.id);
+            const res = await equipmentApi.getMaintenance(eq.id, { signal: controller.signal });
             setMaintLogs(res.data);
         } catch {
-            setMaintLogs([]);
+            if (!controller.signal.aborted) setMaintLogs([]);
         } finally {
-            setMaintLoading(false);
+            if (!controller.signal.aborted) setMaintLoading(false);
         }
     };
 
     const handleSaveMaintenance = async (e) => {
         e.preventDefault();
-        if (!selectedEquipmentForMaint) return;
+        if (!selectedEquipmentForMaint || maintenanceSaving) return;
+        setMaintenanceSaving(true);
         try {
             const payload = {
                 maintenanceDate: new Date(maintForm.maintenanceDate).toISOString(),
@@ -185,7 +200,7 @@ export default function Equipment() {
             await equipmentApi.addMaintenance(selectedEquipmentForMaint.id, payload);
             toast.success('Maintenance record logged');
             setMaintModalOpen(false);
-            loadEquipment();
+            refetch();
         } catch (err) {
             const errData = err.response?.data;
             let errMsg = errData?.message;
@@ -193,6 +208,8 @@ export default function Equipment() {
                 errMsg = Object.values(errData.errors).flat().join(', ');
             }
             toast.error(errMsg || 'Failed to add maintenance record');
+        } finally {
+            setMaintenanceSaving(false);
         }
     };
 
@@ -211,11 +228,15 @@ export default function Equipment() {
 
             {/* Filters */}
             <div className="filter-bar" style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+                <div className="search-input" style={{ minWidth: 240, flex: 1 }}>
+                    <Search size={16} color="var(--text-muted)" />
+                    <input placeholder="Search equipment…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+                </div>
                 <div style={{ minWidth: 220 }}>
                     <select
                         className="form-control"
                         value={categoryFilter}
-                        onChange={e => setCategoryFilter(e.target.value)}
+                        onChange={e => { setCategoryFilter(e.target.value); setPage(1); }}
                     >
                         <option value="">All Categories</option>
                         {CATEGORIES.map(c => (
@@ -227,7 +248,7 @@ export default function Equipment() {
                     <select
                         className="form-control"
                         value={availabilityFilter}
-                        onChange={e => setAvailabilityFilter(e.target.value)}
+                        onChange={e => { setAvailabilityFilter(e.target.value); setPage(1); }}
                     >
                         <option value="">All Availabilities</option>
                         {AVAILABILITY_OPTS.map(a => (
@@ -238,7 +259,7 @@ export default function Equipment() {
             </div>
 
             {loading ? (
-                <LoadingSpinner />
+                <SkeletonLoader />
             ) : equipment.length === 0 ? (
                 <EmptyState
                     icon={<Truck size={48} color="var(--text-muted)" />}
@@ -320,6 +341,8 @@ export default function Equipment() {
                     ))}
                 </div>
             )}
+
+            <Pagination page={page} pageSize={pageSize} totalCount={totalCount} onPageChange={setPage} />
 
             {/* Equipment Modal */}
             <Modal
@@ -507,15 +530,15 @@ export default function Equipment() {
                             </FormField>
                         </div>
                         <div style={{ textAlign: 'right', marginTop: 10 }}>
-                            <button type="submit" className="btn btn-primary" style={{ fontSize: 13 }}>
-                                Log Maintenance
+                            <button type="submit" className="btn btn-primary" style={{ fontSize: 13 }} disabled={maintenanceSaving}>
+                                {maintenanceSaving ? 'Saving…' : 'Log Maintenance'}
                             </button>
                         </div>
                     </form>
 
                     <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Past Service Records</h4>
                     {maintLoading ? (
-                        <LoadingSpinner />
+                        <SkeletonLoader />
                     ) : maintLogs.length === 0 ? (
                         <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
                             No past maintenance logged for this unit.

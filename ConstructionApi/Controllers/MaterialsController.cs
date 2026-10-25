@@ -17,22 +17,36 @@ public class MaterialsController : ControllerBase
     public MaterialsController(AppDbContext db) => _db = db;
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<MaterialDto>>> GetAll(
-        [FromQuery] string? category, [FromQuery] string? stockStatus, [FromQuery] string? search)
+    public async Task<ActionResult<PagedResult<MaterialDto>>> GetAll(
+        [FromQuery] string? category, [FromQuery] string? stockStatus, [FromQuery] string? search,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
+        [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null)
     {
-        var query = _db.Materials.Where(m => m.IsActive).AsQueryable();
+        var query = _db.Materials.AsNoTracking().Where(m => m.IsActive).AsQueryable();
         if (!string.IsNullOrEmpty(category)) query = query.Where(m => m.Category == category);
         if (!string.IsNullOrEmpty(search)) query = query.Where(m => m.Name.Contains(search));
         if (stockStatus == "low") query = query.Where(m => m.CurrentStock <= m.MinimumStockThreshold);
 
-        var items = await query.OrderBy(m => m.Name).Select(m => ToDto(m)).ToListAsync();
-        return Ok(items);
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var total = await query.CountAsync();
+        page = Math.Min(page, Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)));
+        var descending = string.Equals(sortDirection, "desc", StringComparison.OrdinalIgnoreCase);
+        var ordered = (sortBy?.ToLowerInvariant()) switch
+        {
+            "category" => descending ? query.OrderByDescending(m => m.Category) : query.OrderBy(m => m.Category),
+            "stock" => descending ? query.OrderByDescending(m => m.CurrentStock) : query.OrderBy(m => m.CurrentStock),
+            _ => descending ? query.OrderByDescending(m => m.Name) : query.OrderBy(m => m.Name)
+        };
+        var items = await ordered.Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(m => ToDto(m)).ToListAsync();
+        return Ok(new PagedResult<MaterialDto>(items, total, page, pageSize));
     }
 
     [HttpGet("{id}")]
     public async Task<ActionResult<MaterialDto>> GetById(int id)
     {
-        var m = await _db.Materials.FindAsync(id);
+        var m = await _db.Materials.AsNoTracking().FirstOrDefaultAsync(m => m.Id == id);
         if (m == null) return NotFound();
         return Ok(ToDto(m));
     }
@@ -70,9 +84,8 @@ public class MaterialsController : ControllerBase
     public async Task<ActionResult> GetTransactions(int id)
     {
         var txns = await _db.MaterialTransactions
+            .AsNoTracking()
             .Where(t => t.MaterialId == id)
-            .Include(t => t.Material)
-            .Include(t => t.Project)
             .OrderByDescending(t => t.TransactionDate)
             .Select(t => new MaterialTransactionDto(t.Id, t.MaterialId, t.Material.Name,
                 t.ProjectId, t.Project != null ? t.Project.Name : null,
@@ -99,7 +112,7 @@ public class MaterialTransactionsController : ControllerBase
     public async Task<ActionResult<IEnumerable<MaterialTransactionDto>>> GetAll(
         [FromQuery] int? materialId, [FromQuery] int? projectId)
     {
-        var query = _db.MaterialTransactions.Include(t => t.Material).Include(t => t.Project).AsQueryable();
+        var query = _db.MaterialTransactions.AsNoTracking().AsQueryable();
         if (materialId.HasValue) query = query.Where(t => t.MaterialId == materialId.Value);
         if (projectId.HasValue) query = query.Where(t => t.ProjectId == projectId.Value);
 

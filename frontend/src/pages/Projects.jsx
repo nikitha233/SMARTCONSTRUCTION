@@ -1,25 +1,31 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { projectsApi } from '../services/api';
-import { useToast } from '../context/ToastContext';
-import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/useToast';
+import { useAuth } from '../context/useAuth';
 import { formatCurrency, formatDate } from '../utils/helpers';
-import { StatusBadge, ProgressBar, LoadingSpinner, EmptyState, ConfirmDialog, Modal, PageHeader } from '../components/UI';
+import { StatusBadge, ProgressBar, SkeletonLoader, EmptyState, ConfirmDialog, Modal, PageHeader, Pagination } from '../components/UI';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useApi } from '../hooks/useApi';
 import { Plus, Search, Pencil, Trash2, Eye, FolderOpen } from 'lucide-react';
 
+const TODAY_DATE = new Date().toISOString().slice(0, 10);
+
 const STATUSES = ['Planning', 'InProgress', 'OnHold', 'Completed', 'Cancelled'];
+const EMPTY_PAGE = { items: [], totalCount: 0 };
 
 const emptyForm = {
     name: '', projectCode: '', description: '', buildingType: 'Residential',
-    clientName: '', siteAddress: '', city: '', startDate: new Date().toISOString().slice(0, 10),
+    clientName: '', siteAddress: '', city: '', startDate: TODAY_DATE,
     plannedCompletionDate: '', estimatedBudget: '', projectManager: '', status: 'Planning',
 };
 
 export default function Projects() {
-    const [projects, setProjects] = useState([]);
-    const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [page, setPage] = useState(1);
+    const debouncedSearch = useDebouncedValue(search);
+    const pageSize = 20;
     const [modalOpen, setModalOpen] = useState(false);
     const [editProject, setEditProject] = useState(null);
     const [form, setForm] = useState(emptyForm);
@@ -28,15 +34,17 @@ export default function Projects() {
     const toast = useToast();
     const { isAdminOrManager } = useAuth();
 
-    const load = () => {
-        setLoading(true);
-        projectsApi.getAll({ search, status: statusFilter })
-            .then(r => setProjects(r.data))
-            .catch(() => toast.error('Failed to load projects'))
-            .finally(() => setLoading(false));
-    };
+    const fetchProjects = useCallback(async (signal) => {
+        const response = await projectsApi.getAll({ search: debouncedSearch, status: statusFilter, page, pageSize }, { signal });
+        return { items: response.data.items, totalCount: response.data.totalCount };
+    }, [debouncedSearch, page, pageSize, statusFilter]);
+    const { data: projectPage, loading, error, refetch } = useApi(fetchProjects, { initialData: EMPTY_PAGE });
+    const projects = projectPage.items;
+    const totalCount = projectPage.totalCount;
 
-    useEffect(() => { load(); }, [search, statusFilter]);
+    useEffect(() => {
+        if (error) toast.error('Failed to load projects');
+    }, [error, toast]);
 
     const openCreate = () => { setEditProject(null); setForm(emptyForm); setModalOpen(true); };
     const openEdit = (p) => {
@@ -72,7 +80,7 @@ export default function Projects() {
                 toast.success('Project created');
             }
             setModalOpen(false);
-            load();
+            refetch();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Failed to save project');
         } finally {
@@ -95,7 +103,7 @@ export default function Projects() {
 
     return (
         <div>
-            <PageHeader title="Projects" subtitle={`${projects.length} total projects`}>
+            <PageHeader title="Projects" subtitle={`${totalCount} total projects`}>
                 {isAdminOrManager() && (
                     <button className="btn btn-primary" onClick={openCreate} id="btn-create-project">
                         <Plus size={16} /> New Project
@@ -107,15 +115,15 @@ export default function Projects() {
             <div className="filter-bar">
                 <div className="search-input">
                     <Search size={16} color="var(--text-muted)" />
-                    <input placeholder="Search projects…" value={search} onChange={e => setSearch(e.target.value)} id="project-search" />
+                    <input placeholder="Search projects…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} id="project-search" />
                 </div>
-                <select className="filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} id="status-filter">
+                <select className="filter-select" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }} id="status-filter">
                     <option value="">All Statuses</option>
                     {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
             </div>
 
-            {loading ? <LoadingSpinner /> : (
+            {loading ? <SkeletonLoader /> : (
                 projects.length === 0 ? (
                     <EmptyState icon={<FolderOpen size={48} />} title="No projects found" description="Create your first project to get started." />
                 ) : (
@@ -160,6 +168,8 @@ export default function Projects() {
                     </div>
                 )
             )}
+
+            <Pagination page={page} pageSize={pageSize} totalCount={totalCount} onPageChange={setPage} />
 
             {/* Create/Edit Modal */}
             <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)}

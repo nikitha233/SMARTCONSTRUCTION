@@ -28,7 +28,7 @@ export default function AppLayout() {
         <div className="app-layout">
             <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
             <div className="main-content">
-                <TopHeader title={title} subtitle={subtitle} onMenuClick={() => setSidebarOpen(o => !o)} />
+                <TopHeader title={title} subtitle={subtitle} isMenuOpen={sidebarOpen} onMenuClick={() => setSidebarOpen(o => !o)} />
                 <div className="page-content">
                     <Outlet />
                 </div>

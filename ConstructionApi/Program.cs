@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.IO.Compression;
 using System.Text;
 using ConstructionApi.Data;
 using ConstructionApi.Middleware;
@@ -64,6 +66,17 @@ builder.Services.AddAuthentication(options =>
 });
 
 builder.Services.AddAuthorization();
+builder.Services.AddMemoryCache();
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+});
+builder.Services.Configure<BrotliCompressionProviderOptions>(options =>
+    options.Level = CompressionLevel.Fastest);
+builder.Services.Configure<GzipCompressionProviderOptions>(options =>
+    options.Level = CompressionLevel.Fastest);
 
 // ─── Controllers & Swagger ───────────────────────────────────────────────────
 builder.Services.AddControllers()
@@ -102,6 +115,7 @@ var app = builder.Build();
 
 // ─── Middleware Pipeline ──────────────────────────────────────────────────────
 app.UseMiddleware<ErrorHandlingMiddleware>();
+app.UseResponseCompression();
 
 if (app.Environment.IsDevelopment())
 {

@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import {
     LayoutDashboard, FolderOpen, HardHat, Package, Users, Truck,
     DollarSign, BarChart2, TrendingUp, FileText, LogOut, Building2, ClipboardList
@@ -51,8 +51,8 @@ export default function Sidebar({ isOpen, onClose }) {
 
     return (
         <>
-            {isOpen && <div className="sidebar-backdrop" onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 99 }} />}
-            <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
+            {isOpen && <div className="sidebar-backdrop" onClick={onClose} aria-hidden="true" />}
+            <aside id="app-sidebar" className={`sidebar ${isOpen ? 'open' : ''}`}>
                 <div className="sidebar-header">
                     <div className="sidebar-logo">
                         <span className="logo-icon">

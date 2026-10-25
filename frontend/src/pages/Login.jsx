@@ -1,41 +1,52 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { useToast } from '../context/ToastContext';
-import { Building2, Eye, EyeOff, Lock, Mail } from 'lucide-react';
+import { useAuth } from '../context/useAuth';
+import { useToast } from '../context/useToast';
+import { Building2, Eye, EyeOff, Lock, Mail, UserRound } from 'lucide-react';
 
 export default function Login() {
-    const [email, setEmail] = useState('admin@buildsmart.com');
-    const [password, setPassword] = useState('Admin@123!');
+    const [mode, setMode] = useState('login');
+    const [fullName, setFullName] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
     const [showPwd, setShowPwd] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const { login } = useAuth();
+    const { login, signup } = useAuth();
     const toast = useToast();
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         if (e) e.preventDefault();
         setError('');
+        if (mode === 'signup' && !fullName.trim()) {
+            setError('Please enter your full name.');
+            return;
+        }
         if (!email || !password) {
             setError('Please enter your email and password.');
             return;
         }
+        if (mode === 'signup' && password !== confirmPassword) {
+            setError('The passwords do not match.');
+            return;
+        }
         setLoading(true);
         try {
-            await login(email, password);
-            toast.success('Welcome back!');
+            if (mode === 'signup') {
+                await signup(fullName.trim(), email.trim(), password);
+                toast.success('Your account is ready. Welcome to BuildSmart!');
+            } else {
+                await login(email.trim(), password);
+                toast.success('Welcome back!');
+            }
             navigate('/');
         } catch (err) {
-            setError(err.response?.data?.message || 'Invalid email or password.');
+            setError(err.userMessage || err.response?.data?.message || 'Unable to create your account. Please check your details and try again.');
         } finally {
             setLoading(false);
         }
-    };
-
-    const loginAs = (e, p) => {
-        setEmail(e);
-        setPassword(p);
     };
 
     return (
@@ -85,10 +96,32 @@ export default function Login() {
                     </div>
                 )}
 
-                {/* Login Form */}
+                <h2 style={{ fontSize: 19, margin: '0 0 18px', color: 'var(--text-primary)' }}>
+                    {mode === 'signup' ? 'Create your account' : 'Sign in to your account'}
+                </h2>
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {mode === 'signup' && (
+                        <div className="form-group">
+                            <label className="form-label" htmlFor="fullName" style={{ fontWeight: 600 }}>Full name</label>
+                            <div style={{ position: 'relative' }}>
+                                <UserRound size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                <input
+                                    id="fullName"
+                                    type="text"
+                                    className="form-control"
+                                    style={{ paddingLeft: 36 }}
+                                    placeholder="Your full name"
+                                    value={fullName}
+                                    onChange={e => setFullName(e.target.value)}
+                                    autoComplete="name"
+                                    maxLength={120}
+                                    required
+                                />
+                            </div>
+                        </div>
+                    )}
                     <div className="form-group">
-                        <label className="form-label" style={{ fontWeight: 600 }}>Email Address</label>
+                        <label className="form-label" htmlFor="email" style={{ fontWeight: 600 }}>Email Address</label>
                         <div style={{ position: 'relative' }}>
                             <Mail size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                             <input
@@ -106,7 +139,7 @@ export default function Login() {
                     </div>
 
                     <div className="form-group">
-                        <label className="form-label" style={{ fontWeight: 600 }}>Password</label>
+                        <label className="form-label" htmlFor="password" style={{ fontWeight: 600 }}>Password</label>
                         <div style={{ position: 'relative' }}>
                             <Lock size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                             <input
@@ -117,7 +150,8 @@ export default function Login() {
                                 placeholder="••••••••"
                                 value={password}
                                 onChange={e => setPassword(e.target.value)}
-                                autoComplete="current-password"
+                                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                                minLength={mode === 'signup' ? 6 : undefined}
                                 required
                             />
                             <button
@@ -130,52 +164,45 @@ export default function Login() {
                         </div>
                     </div>
 
+                    {mode === 'signup' && (
+                        <div className="form-group">
+                            <label className="form-label" htmlFor="confirmPassword" style={{ fontWeight: 600 }}>Confirm password</label>
+                            <input
+                                id="confirmPassword"
+                                type="password"
+                                className="form-control"
+                                placeholder="Enter your password again"
+                                value={confirmPassword}
+                                onChange={e => setConfirmPassword(e.target.value)}
+                                autoComplete="new-password"
+                                minLength={6}
+                                required
+                            />
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Use at least 6 characters with an uppercase letter, lowercase letter, and number.</span>
+                        </div>
+                    )}
+
                     <button
                         type="submit"
                         className="btn btn-primary btn-lg"
                         disabled={loading}
                         style={{ width: '100%', justifyContent: 'center', fontWeight: 700, marginTop: 4, height: 46 }}
                     >
-                        {loading ? 'Signing in...' : 'Sign In'}
+                        {loading ? (mode === 'signup' ? 'Creating account...' : 'Signing in...') : (mode === 'signup' ? 'Create Account' : 'Sign In')}
                     </button>
                 </form>
 
-                {/* 1-Click Demo Accounts */}
-                <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 18 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                            Demo Accounts
-                        </span>
-                        <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Click to autofill</span>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                        {[
-                            ['Admin', 'admin@buildsmart.com', 'Admin@123!'],
-                            ['Proj. Manager', 'pm@buildsmart.com', 'Manager@123!'],
-                            ['Site Engineer', 'engineer@buildsmart.com', 'Engineer@123!'],
-                            ['Store Manager', 'store@buildsmart.com', 'Store@123!'],
-                        ].map(([role, e, p]) => (
-                            <button
-                                key={role}
-                                type="button"
-                                className="btn btn-outline btn-sm"
-                                onClick={() => loginAs(e, p)}
-                                style={{
-                                    fontSize: 12,
-                                    justifyContent: 'center',
-                                    padding: '7px 8px',
-                                    borderColor: email === e ? 'var(--primary)' : 'var(--border)',
-                                    background: email === e ? '#eaf3ee' : 'transparent',
-                                    color: email === e ? 'var(--primary)' : 'var(--text-primary)',
-                                    fontWeight: email === e ? 700 : 500
-                                }}
-                            >
-                                {role}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                <p style={{ margin: '20px 0 0', textAlign: 'center', fontSize: 13, color: 'var(--text-secondary)' }}>
+                    {mode === 'signup' ? 'Already have an account?' : 'New to BuildSmart?'}{' '}
+                    <button
+                        type="button"
+                        className="btn-link"
+                        onClick={() => { setMode(mode === 'signup' ? 'login' : 'signup'); setError(''); }}
+                        disabled={loading}
+                    >
+                        {mode === 'signup' ? 'Sign in' : 'Create an account'}
+                    </button>
+                </p>
             </div>
         </div>
     );

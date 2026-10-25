@@ -1,28 +1,39 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
+import { useAuth } from './context/useAuth';
 import { ToastProvider } from './context/ToastContext';
-import AppLayout from './layouts/AppLayout';
-import { LoadingSpinner } from './components/UI';
+import { SkeletonLoader } from './components/UI';
+import ErrorBoundary from './components/ErrorBoundary';
 
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Projects from './pages/Projects';
-import ProjectDetail from './pages/ProjectDetail';
-import Stages from './pages/Stages';
-import ProgressUpdates from './pages/ProgressUpdates';
-import Materials from './pages/Materials';
-import Workers from './pages/Workers';
-import Attendance from './pages/Attendance';
-import Equipment from './pages/Equipment';
-import Expenses from './pages/Expenses';
-import Budget from './pages/Budget';
-import Reports from './pages/Reports';
+const AppLayout = lazy(() => import('./layouts/AppLayout'));
+const Login = lazy(() => import('./pages/Login'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Projects = lazy(() => import('./pages/Projects'));
+const ProjectDetail = lazy(() => import('./pages/ProjectDetail'));
+const Stages = lazy(() => import('./pages/Stages'));
+const ProgressUpdates = lazy(() => import('./pages/ProgressUpdates'));
+const Materials = lazy(() => import('./pages/Materials'));
+const Workers = lazy(() => import('./pages/Workers'));
+const Attendance = lazy(() => import('./pages/Attendance'));
+const Equipment = lazy(() => import('./pages/Equipment'));
+const Expenses = lazy(() => import('./pages/Expenses'));
+const Budget = lazy(() => import('./pages/Budget'));
+const Reports = lazy(() => import('./pages/Reports'));
+
+function loadPage(Component) {
+    return (
+        <Suspense fallback={<SkeletonLoader fullPage variant="cards" rows={4} />}>
+            <Component />
+        </Suspense>
+    );
+}
 
 function ProtectedRoute({ children }) {
     const { user, loading } = useAuth();
 
     if (loading) {
-        return <LoadingSpinner fullPage />;
+        return <SkeletonLoader fullPage variant="cards" rows={4} />;
     }
 
     if (!user) {
@@ -36,7 +47,7 @@ function PublicOnlyRoute({ children }) {
     const { user, loading } = useAuth();
 
     if (loading) {
-        return <LoadingSpinner fullPage />;
+        return <SkeletonLoader fullPage variant="cards" rows={4} />;
     }
 
     if (user) {
@@ -56,7 +67,7 @@ export default function App() {
                             path="/login"
                             element={
                                 <PublicOnlyRoute>
-                                    <Login />
+                                    {loadPage(Login)}
                                 </PublicOnlyRoute>
                             }
                         />
@@ -65,22 +76,22 @@ export default function App() {
                             path="/"
                             element={
                                 <ProtectedRoute>
-                                    <AppLayout />
+                                    <ErrorBoundary>{loadPage(AppLayout)}</ErrorBoundary>
                                 </ProtectedRoute>
                             }
                         >
-                            <Route index element={<Dashboard />} />
-                            <Route path="projects" element={<Projects />} />
-                            <Route path="projects/:id" element={<ProjectDetail />} />
-                            <Route path="stages" element={<Stages />} />
-                            <Route path="progress" element={<ProgressUpdates />} />
-                            <Route path="materials" element={<Materials />} />
-                            <Route path="workers" element={<Workers />} />
-                            <Route path="attendance" element={<Attendance />} />
-                            <Route path="equipment" element={<Equipment />} />
-                            <Route path="expenses" element={<Expenses />} />
-                            <Route path="budget" element={<Budget />} />
-                            <Route path="reports" element={<Reports />} />
+                            <Route index element={loadPage(Dashboard)} />
+                            <Route path="projects" element={loadPage(Projects)} />
+                            <Route path="projects/:id" element={loadPage(ProjectDetail)} />
+                            <Route path="stages" element={loadPage(Stages)} />
+                            <Route path="progress" element={loadPage(ProgressUpdates)} />
+                            <Route path="materials" element={loadPage(Materials)} />
+                            <Route path="workers" element={loadPage(Workers)} />
+                            <Route path="attendance" element={loadPage(Attendance)} />
+                            <Route path="equipment" element={loadPage(Equipment)} />
+                            <Route path="expenses" element={loadPage(Expenses)} />
+                            <Route path="budget" element={loadPage(Budget)} />
+                            <Route path="reports" element={loadPage(Reports)} />
                         </Route>
 
                         <Route path="*" element={<Navigate to="/" replace />} />

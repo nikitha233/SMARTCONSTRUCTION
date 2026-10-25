@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { projectsApi, stagesApi, expensesApi, progressApi } from '../services/api';
+import { projectsApi } from '../services/api';
+import { useRequestController } from '../hooks/useRequestController';
 import { formatCurrency, formatDate } from '../utils/helpers';
-import { StatusBadge, ProgressBar, LoadingSpinner } from '../components/UI';
-import { ArrowLeft, Calendar, DollarSign, Users, Truck } from 'lucide-react';
+import { StatusBadge, ProgressBar, SkeletonLoader, DataTable } from '../components/UI';
+import { ArrowLeft } from 'lucide-react';
 
 const TABS = ['Overview', 'Stages', 'Expenses', 'Progress'];
 
@@ -16,28 +17,28 @@ export default function ProjectDetail() {
     const [progress, setProgress] = useState([]);
     const [tab, setTab] = useState('Overview');
     const [loading, setLoading] = useState(true);
+    const createRequestController = useRequestController();
 
     useEffect(() => {
+        const controller = createRequestController();
+        const config = { signal: controller.signal };
         Promise.all([
-            projectsApi.getById(id),
-            projectsApi.getStages(id),
-            projectsApi.getExpenses(id),
-            projectsApi.getProgressUpdates(id),
+            projectsApi.getById(id, config),
+            projectsApi.getStages(id, config),
+            projectsApi.getExpenses(id, config),
+            projectsApi.getProgressUpdates(id, config),
         ]).then(([pr, st, ex, pg]) => {
             setProject(pr.data);
             setStages(st.data);
             setExpenses(ex.data);
             setProgress(pg.data);
-        }).catch(() => navigate('/projects'))
-            .finally(() => setLoading(false));
-    }, [id]);
+        }).catch(() => { if (!controller.signal.aborted) navigate('/projects'); })
+            .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+        return () => controller.abort();
+    }, [createRequestController, id, navigate]);
 
-    if (loading) return <LoadingSpinner fullPage />;
+    if (loading) return <SkeletonLoader fullPage variant="cards" rows={4} />;
     if (!project) return null;
-
-    const budgetPct = project.estimatedBudget > 0
-        ? Math.round((project.actualCost / project.estimatedBudget) * 100)
-        : 0;
 
     return (
         <div>
@@ -125,8 +126,8 @@ export default function ProjectDetail() {
                     <div style={{ marginBottom: 12, fontWeight: 700, fontSize: 16 }}>
                         Total: {formatCurrency(expenses.reduce((s, e) => s + e.amount, 0))}
                     </div>
-                    <div className="table-container">
-                        <table className="data-table">
+                    <DataTable className="table-container">
+<table className="data-table">
                             <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th>Method</th></tr></thead>
                             <tbody>
                                 {expenses.map(e => (
@@ -140,7 +141,7 @@ export default function ProjectDetail() {
                                 ))}
                             </tbody>
                         </table>
-                    </div>
+</DataTable>
                 </div>
             )}
 

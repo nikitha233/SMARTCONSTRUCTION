@@ -41,6 +41,38 @@ public class AuthController : ControllerBase
         return Ok(new AuthResponseDto(token, user.Id, user.Email!, user.FullName, user.Role, expiry));
     }
 
+    [HttpPost("signup")]
+    [AllowAnonymous]
+    public async Task<ActionResult<AuthResponseDto>> SignUp(SignUpDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.FullName) || string.IsNullOrWhiteSpace(dto.Email) || string.IsNullOrWhiteSpace(dto.Password))
+            return BadRequest(new { message = "Full name, email, and password are required." });
+
+        const string role = "SiteEngineer";
+        var user = new ApplicationUser
+        {
+            UserName = dto.Email.Trim(),
+            Email = dto.Email.Trim(),
+            FullName = dto.FullName.Trim(),
+            Role = role,
+            EmailConfirmed = true
+        };
+
+        var createResult = await _userManager.CreateAsync(user, dto.Password);
+        if (!createResult.Succeeded)
+            return BadRequest(new { errors = createResult.Errors.Select(error => error.Description) });
+
+        var roleResult = await _userManager.AddToRoleAsync(user, role);
+        if (!roleResult.Succeeded)
+        {
+            await _userManager.DeleteAsync(user);
+            return BadRequest(new { errors = roleResult.Errors.Select(error => error.Description) });
+        }
+
+        var token = GenerateJwtToken(user);
+        return Ok(new AuthResponseDto(token, user.Id, user.Email!, user.FullName, user.Role, DateTime.UtcNow.AddHours(24)));
+    }
+
     [HttpPost("register")]
     [Authorize(Roles = "Admin")]
     public async Task<ActionResult<AuthResponseDto>> Register(RegisterDto dto)

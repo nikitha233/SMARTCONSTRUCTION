@@ -17,28 +17,44 @@ public class ProjectsController : ControllerBase
     public ProjectsController(AppDbContext db) => _db = db;
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<ProjectDto>>> GetAll(
+    public async Task<ActionResult<PagedResult<ProjectDto>>> GetAll(
         [FromQuery] string? status, [FromQuery] string? search,
-        [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
+        [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null)
     {
-        var query = _db.Projects.AsQueryable();
+        var query = _db.Projects.AsNoTracking().AsQueryable();
         if (!string.IsNullOrEmpty(status)) query = query.Where(p => p.Status == status);
         if (!string.IsNullOrEmpty(search))
             query = query.Where(p => p.Name.Contains(search) || p.ProjectCode.Contains(search) || p.ClientName.Contains(search));
 
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
         var total = await query.CountAsync();
-        var items = await query.OrderByDescending(p => p.CreatedAt)
+        page = Math.Min(page, Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)));
+        var descending = string.Equals(sortDirection, "desc", StringComparison.OrdinalIgnoreCase);
+        var ordered = (sortBy?.ToLowerInvariant()) switch
+        {
+            "name" => descending ? query.OrderByDescending(p => p.Name) : query.OrderBy(p => p.Name),
+            "projectcode" => descending ? query.OrderByDescending(p => p.ProjectCode) : query.OrderBy(p => p.ProjectCode),
+            "status" => descending ? query.OrderByDescending(p => p.Status) : query.OrderBy(p => p.Status),
+            _ => query.OrderByDescending(p => p.CreatedAt)
+        };
+        var items = await ordered
             .Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(p => ToDto(p)).ToListAsync();
+            .Select(p => new ProjectDto(
+                p.Id, p.Name, p.ProjectCode, p.Description, p.BuildingType, p.ClientName,
+                p.SiteAddress, p.City, p.StartDate, p.PlannedCompletionDate, p.ActualCompletionDate,
+                p.EstimatedBudget, p.ActualCost, p.ProjectManager, p.Status, p.CompletionPercentage,
+                p.CreatedAt, p.UpdatedAt))
+            .ToListAsync();
 
-        Response.Headers["X-Total-Count"] = total.ToString();
-        return Ok(items);
+        return Ok(new PagedResult<ProjectDto>(items, total, page, pageSize));
     }
 
     [HttpGet("{id}")]
     public async Task<ActionResult<ProjectDto>> GetById(int id)
     {
-        var p = await _db.Projects.FindAsync(id);
+        var p = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
         if (p == null) return NotFound();
         return Ok(ToDto(p));
     }
@@ -113,7 +129,7 @@ public class ProjectsController : ControllerBase
     {
         var expenses = await _db.Expenses
             .Where(e => e.ProjectId == id)
-            .Include(e => e.Project)
+            .AsNoTracking()
             .OrderByDescending(e => e.ExpenseDate)
             .Select(e => new ExpenseDto(e.Id, e.ProjectId, e.Project.Name, e.Category, e.Description,
                 e.Amount, e.ExpenseDate, e.PaymentMethod, e.ReferenceNumber, e.RecordedBy, e.CreatedAt))
@@ -126,8 +142,7 @@ public class ProjectsController : ControllerBase
     {
         var updates = await _db.ProgressUpdates
             .Where(pu => pu.ProjectId == id)
-            .Include(pu => pu.Project)
-            .Include(pu => pu.ConstructionStage)
+            .AsNoTracking()
             .OrderByDescending(pu => pu.UpdateDate)
             .Select(pu => new ProgressUpdateDto(pu.Id, pu.ProjectId, pu.Project.Name,
                 pu.ConstructionStageId, pu.ConstructionStage != null ? pu.ConstructionStage.StageName : null,

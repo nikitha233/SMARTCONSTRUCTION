@@ -1,10 +1,15 @@
-import { useEffect, useState } from 'react';
-import { expensesApi, projectsApi } from '../services/api';
-import { useToast } from '../context/ToastContext';
-import { useAuth } from '../context/AuthContext';
+import { useCallback, useEffect, useState } from 'react';
+import { expensesApi, lookupApi } from '../services/api';
+import { useToast } from '../context/useToast';
+import { useAuth } from '../context/useAuth';
 import { formatCurrency, formatDate } from '../utils/helpers';
-import { LoadingSpinner, EmptyState, ConfirmDialog, Modal, PageHeader, FormField } from '../components/UI';
-import { Plus, Search, Pencil, Trash2, DollarSign, CreditCard, Calendar, Filter } from 'lucide-react';
+import { SkeletonLoader, EmptyState, ConfirmDialog, Modal, PageHeader, FormField, Pagination, DataTable } from '../components/UI';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useRequestController } from '../hooks/useRequestController';
+import { useApi } from '../hooks/useApi';
+import { Plus, Search, Pencil, Trash2, DollarSign } from 'lucide-react';
+
+const TODAY_DATE = new Date().toISOString().slice(0, 10);
 
 const CATEGORIES = [
     'Materials',
@@ -17,6 +22,7 @@ const CATEGORIES = [
 ];
 
 const PAYMENT_METHODS = ['BankTransfer', 'Cheque', 'Cash', 'UPI'];
+const EMPTY_PAGE = { items: [], totalCount: 0 };
 
 const getCategoryBadgeStyle = (cat) => {
     switch (cat?.toLowerCase()) {
@@ -36,17 +42,20 @@ const emptyForm = {
     category: 'Materials',
     description: '',
     amount: '',
-    expenseDate: new Date().toISOString().slice(0, 10),
+    expenseDate: TODAY_DATE,
     paymentMethod: 'BankTransfer',
     referenceNumber: '',
 };
 
 export default function Expenses() {
-    const [expenses, setExpenses] = useState([]);
     const [projects, setProjects] = useState([]);
     const [selectedProject, setSelectedProject] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('');
-    const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState('');
+    const [page, setPage] = useState(1);
+    const debouncedSearch = useDebouncedValue(search);
+    const pageSize = 20;
+    const createRequestController = useRequestController();
     const [modalOpen, setModalOpen] = useState(false);
     const [editExpense, setEditExpense] = useState(null);
     const [form, setForm] = useState(emptyForm);
@@ -56,37 +65,35 @@ export default function Expenses() {
     const toast = useToast();
     const { isAdminOrManager } = useAuth();
 
-    const loadProjects = async () => {
+    const loadProjects = useCallback(async (signal) => {
         try {
-            const res = await projectsApi.getAll();
-            setProjects(res.data);
+            const res = await lookupApi.getAll({ signal });
+            setProjects(res.data.projects);
         } catch {
-            toast.error('Failed to load projects');
+            if (!signal?.aborted) toast.error('Failed to load projects');
         }
-    };
+    }, [toast]);
 
-    const loadExpenses = async () => {
-        setLoading(true);
-        try {
-            const params = {};
-            if (selectedProject) params.projectId = selectedProject;
-            if (categoryFilter) params.category = categoryFilter;
-            const res = await expensesApi.getAll(params);
-            setExpenses(res.data);
-        } catch {
-            toast.error('Failed to load expenses');
-        } finally {
-            setLoading(false);
-        }
-    };
+    const fetchExpenses = useCallback(async (signal) => {
+        const params = { search: debouncedSearch, page, pageSize };
+        if (selectedProject) params.projectId = selectedProject;
+        if (categoryFilter) params.category = categoryFilter;
+        const response = await expensesApi.getAll(params, { signal });
+        return { items: response.data.items, totalCount: response.data.totalCount };
+    }, [categoryFilter, debouncedSearch, page, pageSize, selectedProject]);
+    const { data: expensePage, loading, error, refetch } = useApi(fetchExpenses, { initialData: EMPTY_PAGE });
+    const expenses = expensePage.items;
+    const totalCount = expensePage.totalCount;
 
     useEffect(() => {
-        loadProjects();
-    }, []);
+        if (error) toast.error('Failed to load expenses');
+    }, [error, toast]);
 
     useEffect(() => {
-        loadExpenses();
-    }, [selectedProject, categoryFilter]);
+        const controller = createRequestController();
+        queueMicrotask(() => { if (!controller.signal.aborted) loadProjects(controller.signal); });
+        return () => controller.abort();
+    }, [createRequestController, loadProjects]);
 
     const openCreate = () => {
         setEditExpense(null);
@@ -143,7 +150,7 @@ export default function Expenses() {
                 toast.success('Expense recorded');
             }
             setModalOpen(false);
-            loadExpenses();
+            refetch();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Failed to save expense');
         } finally {
@@ -157,7 +164,7 @@ export default function Expenses() {
             await expensesApi.delete(deleteId);
             toast.success('Expense deleted');
             setDeleteId(null);
-            loadExpenses();
+            refetch();
         } catch {
             toast.error('Failed to delete expense');
         }
@@ -187,17 +194,21 @@ export default function Expenses() {
                     </h2>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                    Showing {expenses.length} transaction records
+                    Showing {expenses.length} of {totalCount} transaction records
                 </div>
             </div>
 
             {/* Filter Bar */}
             <div className="filter-bar" style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+                <div className="search-input" style={{ minWidth: 240, flex: 1 }}>
+                    <Search size={16} color="var(--text-muted)" />
+                    <input placeholder="Search expenses…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+                </div>
                 <div style={{ minWidth: 240 }}>
                     <select
                         className="form-control"
                         value={selectedProject}
-                        onChange={e => setSelectedProject(e.target.value)}
+                        onChange={e => { setSelectedProject(e.target.value); setPage(1); }}
                     >
                         <option value="">All Projects</option>
                         {projects.map(p => (
@@ -209,7 +220,7 @@ export default function Expenses() {
                     <select
                         className="form-control"
                         value={categoryFilter}
-                        onChange={e => setCategoryFilter(e.target.value)}
+                        onChange={e => { setCategoryFilter(e.target.value); setPage(1); }}
                     >
                         <option value="">All Categories</option>
                         {CATEGORIES.map(c => (
@@ -220,7 +231,7 @@ export default function Expenses() {
             </div>
 
             {loading ? (
-                <LoadingSpinner />
+                <SkeletonLoader />
             ) : expenses.length === 0 ? (
                 <EmptyState
                     icon={<DollarSign size={48} color="var(--text-muted)" />}
@@ -236,8 +247,8 @@ export default function Expenses() {
                 />
             ) : (
                 <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                    <div className="table-responsive">
-                        <table className="data-table">
+                    <DataTable className="table-responsive">
+<table className="data-table">
                             <thead>
                                 <tr>
                                     <th>Project</th>
@@ -296,9 +307,11 @@ export default function Expenses() {
                                 ))}
                             </tbody>
                         </table>
-                    </div>
+</DataTable>
                 </div>
             )}
+
+            <Pagination page={page} pageSize={pageSize} totalCount={totalCount} onPageChange={setPage} />
 
             {/* Expense Modal */}
             <Modal

@@ -1,17 +1,20 @@
-import { useEffect, useState } from 'react';
-import { attendanceApi, workersApi, projectsApi } from '../services/api';
-import { useToast } from '../context/ToastContext';
-import { useAuth } from '../context/AuthContext';
+import { useCallback, useEffect, useState } from 'react';
+import { attendanceApi, lookupApi } from '../services/api';
+import { useToast } from '../context/useToast';
+import { useAuth } from '../context/useAuth';
 import { formatCurrency, formatDate } from '../utils/helpers';
-import { StatusBadge, LoadingSpinner, EmptyState, Modal, PageHeader, FormField } from '../components/UI';
-import { Plus, CheckCircle, XCircle, Clock, Calendar, Users, Filter, CheckSquare } from 'lucide-react';
+import { StatusBadge, SkeletonLoader, EmptyState, Modal, PageHeader, FormField, DataTable } from '../components/UI';
+import { Plus, CheckCircle, XCircle, Clock, Calendar, Users, CheckSquare } from 'lucide-react';
+import { useRequestController } from '../hooks/useRequestController';
+
+const TODAY_DATE = new Date().toISOString().slice(0, 10);
 
 const STATUS_OPTS = ['Present', 'HalfDay', 'Absent'];
 
 const emptyForm = {
     workerId: '',
     projectId: '',
-    attendanceDate: new Date().toISOString().slice(0, 10),
+    attendanceDate: TODAY_DATE,
     status: 'Present',
     notes: '',
 };
@@ -20,7 +23,7 @@ export default function Attendance() {
     const [records, setRecords] = useState([]);
     const [workers, setWorkers] = useState([]);
     const [projects, setProjects] = useState([]);
-    const [dateFilter, setDateFilter] = useState(new Date().toISOString().slice(0, 10));
+    const [dateFilter, setDateFilter] = useState(TODAY_DATE);
     const [projectFilter, setProjectFilter] = useState('');
     const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
@@ -29,49 +32,50 @@ export default function Attendance() {
 
     const toast = useToast();
     const { isAdminOrManager } = useAuth();
+    const createRequestController = useRequestController();
 
-    const loadMetadata = async () => {
+    const loadMetadata = useCallback(async (signal) => {
         try {
-            const [wRes, pRes] = await Promise.all([
-                workersApi.getAll(),
-                projectsApi.getAll(),
-            ]);
-            setWorkers(wRes.data);
-            setProjects(pRes.data);
+            const res = await lookupApi.getAll({ signal });
+            setWorkers(res.data.workers);
+            setProjects(res.data.projects);
         } catch {
-            toast.error('Failed to load workers or projects');
+            if (!signal?.aborted) toast.error('Failed to load workers or projects');
         }
-    };
+    }, [toast]);
 
-    const loadAttendance = async () => {
-        setLoading(true);
+    const loadAttendance = useCallback(async (signal) => {
         try {
             const params = {};
             if (dateFilter) params.date = dateFilter;
             if (projectFilter) params.projectId = projectFilter;
-            const res = await attendanceApi.getAll(params);
+            const res = await attendanceApi.getAll(params, { signal });
             setRecords(res.data);
         } catch {
-            toast.error('Failed to load attendance records');
+            if (!signal?.aborted) toast.error('Failed to load attendance records');
         } finally {
-            setLoading(false);
+            if (!signal?.aborted) setLoading(false);
         }
-    };
+    }, [dateFilter, projectFilter, toast]);
 
     useEffect(() => {
-        loadMetadata();
-    }, []);
+        const controller = createRequestController();
+        queueMicrotask(() => { if (!controller.signal.aborted) loadMetadata(controller.signal); });
+        return () => controller.abort();
+    }, [createRequestController, loadMetadata]);
 
     useEffect(() => {
-        loadAttendance();
-    }, [dateFilter, projectFilter]);
+        const controller = createRequestController();
+        queueMicrotask(() => { if (!controller.signal.aborted) loadAttendance(controller.signal); });
+        return () => controller.abort();
+    }, [createRequestController, loadAttendance]);
 
     const openMarkModal = () => {
         setForm({
             ...emptyForm,
             workerId: workers[0]?.id ? String(workers[0].id) : '',
             projectId: projectFilter || (projects[0]?.id ? String(projects[0].id) : ''),
-            attendanceDate: dateFilter || new Date().toISOString().slice(0, 10),
+            attendanceDate: dateFilter || TODAY_DATE,
         });
         setModalOpen(true);
     };
@@ -198,7 +202,7 @@ export default function Attendance() {
             </div>
 
             {loading ? (
-                <LoadingSpinner />
+                <SkeletonLoader />
             ) : records.length === 0 ? (
                 <EmptyState
                     icon={<Calendar size={48} color="var(--text-muted)" />}
@@ -214,8 +218,8 @@ export default function Attendance() {
                 />
             ) : (
                 <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                    <div className="table-responsive">
-                        <table className="data-table">
+                    <DataTable className="table-responsive">
+<table className="data-table">
                             <thead>
                                 <tr>
                                     <th>Worker Name</th>
@@ -256,7 +260,7 @@ export default function Attendance() {
                                 ))}
                             </tbody>
                         </table>
-                    </div>
+</DataTable>
                 </div>
             )}
 

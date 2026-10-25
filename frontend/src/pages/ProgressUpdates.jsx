@@ -1,15 +1,18 @@
-import { useEffect, useState } from 'react';
-import { progressApi, projectsApi, stagesApi } from '../services/api';
-import { useToast } from '../context/ToastContext';
-import { useAuth } from '../context/AuthContext';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { progressApi, lookupApi, stagesApi } from '../services/api';
+import { useToast } from '../context/useToast';
+import { useAuth } from '../context/useAuth';
 import { formatDate } from '../utils/helpers';
-import { ProgressBar, LoadingSpinner, EmptyState, Modal, PageHeader, FormField } from '../components/UI';
-import { Plus, TrendingUp, AlertTriangle, ShieldCheck, Calendar, Filter } from 'lucide-react';
+import { ProgressBar, SkeletonLoader, EmptyState, Modal, PageHeader, FormField } from '../components/UI';
+import { Plus, TrendingUp, AlertTriangle, ShieldCheck, Calendar } from 'lucide-react';
+import { useRequestController } from '../hooks/useRequestController';
+
+const TODAY_DATE = new Date().toISOString().slice(0, 10);
 
 const emptyForm = {
     projectId: '',
     constructionStageId: '',
-    updateDate: new Date().toISOString().slice(0, 10),
+    updateDate: TODAY_DATE,
     completionPercentage: 50,
     workCompletedToday: '',
     workPlannedForTomorrow: '',
@@ -30,45 +33,53 @@ export default function ProgressUpdates() {
 
     const toast = useToast();
     const { user, isAdminOrManager } = useAuth();
+    const createRequestController = useRequestController();
+    const stagesControllerRef = useRef(null);
 
-    const loadProjects = async () => {
+    const loadProjects = useCallback(async (signal) => {
         try {
-            const res = await projectsApi.getAll();
-            setProjects(res.data);
+            const res = await lookupApi.getAll({ signal });
+            setProjects(res.data.projects);
         } catch {
-            toast.error('Failed to load projects');
+            if (!signal?.aborted) toast.error('Failed to load projects');
         }
-    };
+    }, [toast]);
 
-    const loadUpdates = async () => {
-        setLoading(true);
+    const loadUpdates = useCallback(async (signal) => {
         try {
-            const res = await progressApi.getAll(selectedProject ? { projectId: selectedProject } : {});
+            const res = await progressApi.getAll(selectedProject ? { projectId: selectedProject } : {}, { signal });
             setUpdates(res.data);
         } catch {
-            toast.error('Failed to load progress reports');
+            if (!signal?.aborted) toast.error('Failed to load progress reports');
         } finally {
-            setLoading(false);
+            if (!signal?.aborted) setLoading(false);
         }
-    };
+    }, [selectedProject, toast]);
 
     useEffect(() => {
-        loadProjects();
-    }, []);
+        const controller = createRequestController();
+        queueMicrotask(() => { if (!controller.signal.aborted) loadProjects(controller.signal); });
+        return () => controller.abort();
+    }, [createRequestController, loadProjects]);
 
     useEffect(() => {
-        loadUpdates();
-    }, [selectedProject]);
+        const controller = createRequestController();
+        queueMicrotask(() => { if (!controller.signal.aborted) loadUpdates(controller.signal); });
+        return () => controller.abort();
+    }, [createRequestController, loadUpdates, selectedProject]);
 
     // When project changes in the form, fetch its stages
     const handleProjectChangeInForm = async (projId) => {
         setForm(prev => ({ ...prev, projectId: projId, constructionStageId: '' }));
+        stagesControllerRef.current?.abort();
         if (projId) {
+            const controller = createRequestController();
+            stagesControllerRef.current = controller;
             try {
-                const res = await stagesApi.getAll({ projectId: projId });
+                const res = await stagesApi.getAll({ projectId: projId }, { signal: controller.signal });
                 setStages(res.data);
             } catch {
-                setStages([]);
+                if (!controller.signal.aborted) setStages([]);
             }
         } else {
             setStages([]);
@@ -154,7 +165,7 @@ export default function ProgressUpdates() {
             </div>
 
             {loading ? (
-                <LoadingSpinner />
+                <SkeletonLoader />
             ) : updates.length === 0 ? (
                 <EmptyState
                     icon={<TrendingUp size={48} color="var(--text-muted)" />}

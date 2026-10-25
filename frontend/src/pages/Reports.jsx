@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { reportsApi } from '../services/api';
-import { useToast } from '../context/ToastContext';
+import { useApi } from '../hooks/useApi';
+import { useToast } from '../context/useToast';
+import { Link } from 'react-router-dom';
 import { formatCurrency, formatDate, downloadCSV } from '../utils/helpers';
-import { LoadingSpinner, PageHeader, StatusBadge } from '../components/UI';
-import { FileText, Download, Printer, Filter, Calendar, CheckCircle, Package, Truck, Users, DollarSign } from 'lucide-react';
+import { SkeletonLoader, EmptyState, PageHeader, StatusBadge, DataTable } from '../components/UI';
+import { FileText, Download, Printer, Package, Truck, Users, DollarSign } from 'lucide-react';
+
+const TODAY_DATE = new Date().toISOString().slice(0, 10);
 
 const TABS = [
     { id: 'projects', label: 'CPWD Project Summary', icon: FileText },
@@ -13,39 +17,35 @@ const TABS = [
     { id: 'equipment', label: 'Equipment Utilization', icon: Truck },
 ];
 
+function isEmptyReport(data) {
+    if (Array.isArray(data)) return data.length === 0;
+    if (Array.isArray(data?.expenses)) return data.expenses.length === 0;
+    if (Array.isArray(data?.records)) return data.records.length === 0;
+    return false;
+}
+
 export default function Reports() {
     const [activeTab, setActiveTab] = useState('projects');
-    const [data, setData] = useState(null);
-    const [loading, setLoading] = useState(true);
     const toast = useToast();
-
-    const fetchReport = async (tab) => {
-        setLoading(true);
-        setData(null);
-        try {
-            let res;
-            if (tab === 'projects') res = await reportsApi.projectSummary();
-            else if (tab === 'inventory') res = await reportsApi.inventory();
-            else if (tab === 'expenses') res = await reportsApi.expenses();
-            else if (tab === 'attendance') res = await reportsApi.attendance();
-            else if (tab === 'equipment') res = await reportsApi.equipmentUtilization();
-
-            setData(res?.data);
-        } catch {
-            toast.error('Failed to load report data');
-        } finally {
-            setLoading(false);
-        }
-    };
+    const fetchReport = useCallback(async (signal) => {
+        let response;
+        if (activeTab === 'projects') response = await reportsApi.projectSummary(undefined, { signal });
+        else if (activeTab === 'inventory') response = await reportsApi.inventory({ signal });
+        else if (activeTab === 'expenses') response = await reportsApi.expenses(undefined, { signal });
+        else if (activeTab === 'attendance') response = await reportsApi.attendance(undefined, { signal });
+        else if (activeTab === 'equipment') response = await reportsApi.equipmentUtilization({ signal });
+        return response?.data ?? null;
+    }, [activeTab]);
+    const { data, loading, error, refetch } = useApi(fetchReport, { initialData: null, clearOnLoad: true });
 
     useEffect(() => {
-        fetchReport(activeTab);
-    }, [activeTab]);
+        if (error) toast.error('Failed to load report data');
+    }, [error, toast]);
 
     const handleExportCSV = () => {
         if (!data) return;
         let exportRows = [];
-        let filename = `${activeTab}-report-${new Date().toISOString().slice(0, 10)}.csv`;
+        let filename = `${activeTab}-report-${TODAY_DATE}.csv`;
 
         if (activeTab === 'projects') {
             exportRows = (Array.isArray(data) ? data : []).map(p => ({
@@ -160,18 +160,22 @@ export default function Reports() {
             </div>
 
             {loading ? (
-                <LoadingSpinner />
-            ) : !data ? (
-                <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                    No report data available.
-                </div>
+                <SkeletonLoader />
+            ) : error ? (
+                <EmptyState title="Report couldn't be loaded" description="Check your connection and try again." action={<button className="btn btn-primary" onClick={refetch}>Try again</button>} />
+            ) : !data || isEmptyReport(data) ? (
+                <EmptyState
+                    title="No report data available"
+                    description="Add records in the related area to populate this report."
+                    action={<Link className="btn btn-primary" style={{ marginTop: 12 }} to={{ projects: '/projects', inventory: '/materials', expenses: '/expenses', attendance: '/attendance', equipment: '/equipment' }[activeTab]}>Open {activeTab}</Link>}
+                />
             ) : (
                 <div>
                     {/* TAB 1: CPWD Projects Summary */}
                     {activeTab === 'projects' && Array.isArray(data) && (
                         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                            <div className="table-responsive">
-                                <table className="data-table">
+                            <DataTable className="table-responsive">
+<table className="data-table">
                                     <thead>
                                         <tr>
                                             <th>Code</th>
@@ -204,15 +208,15 @@ export default function Reports() {
                                         ))}
                                     </tbody>
                                 </table>
-                            </div>
+</DataTable>
                         </div>
                     )}
 
                     {/* TAB 2: Inventory & Materials */}
                     {activeTab === 'inventory' && Array.isArray(data) && (
                         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                            <div className="table-responsive">
-                                <table className="data-table">
+                            <DataTable className="table-responsive">
+<table className="data-table">
                                     <thead>
                                         <tr>
                                             <th>Material Name</th>
@@ -244,7 +248,7 @@ export default function Reports() {
                                         ))}
                                     </tbody>
                                 </table>
-                            </div>
+</DataTable>
                         </div>
                     )}
 
@@ -269,8 +273,8 @@ export default function Reports() {
                             </div>
 
                             <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                                <div className="table-responsive">
-                                    <table className="data-table">
+                                <DataTable className="table-responsive">
+<table className="data-table">
                                         <thead>
                                             <tr>
                                                 <th>Project</th>
@@ -294,7 +298,7 @@ export default function Reports() {
                                             ))}
                                         </tbody>
                                     </table>
-                                </div>
+</DataTable>
                             </div>
                         </div>
                     )}
@@ -302,8 +306,8 @@ export default function Reports() {
                     {/* TAB 4: Attendance Muster Roll */}
                     {activeTab === 'attendance' && data && (
                         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                            <div className="table-responsive">
-                                <table className="data-table">
+                            <DataTable className="table-responsive">
+<table className="data-table">
                                     <thead>
                                         <tr>
                                             <th>Worker Name</th>
@@ -332,15 +336,15 @@ export default function Reports() {
                                         })}
                                     </tbody>
                                 </table>
-                            </div>
+</DataTable>
                         </div>
                     )}
 
                     {/* TAB 5: Equipment Utilization */}
                     {activeTab === 'equipment' && Array.isArray(data) && (
                         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                            <div className="table-responsive">
-                                <table className="data-table">
+                            <DataTable className="table-responsive">
+<table className="data-table">
                                     <thead>
                                         <tr>
                                             <th>Asset Code</th>
@@ -372,7 +376,7 @@ export default function Reports() {
                                         ))}
                                     </tbody>
                                 </table>
-                            </div>
+</DataTable>
                         </div>
                     )}
                 </div>

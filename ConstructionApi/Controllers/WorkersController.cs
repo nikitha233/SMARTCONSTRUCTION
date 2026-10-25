@@ -16,23 +16,37 @@ public class WorkersController : ControllerBase
     public WorkersController(AppDbContext db) => _db = db;
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<WorkerDto>>> GetAll([FromQuery] string? search, [FromQuery] string? status)
+    public async Task<ActionResult<PagedResult<WorkerDto>>> GetAll(
+        [FromQuery] string? search, [FromQuery] string? status,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
+        [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null)
     {
-        var query = _db.Workers.AsQueryable();
+        var query = _db.Workers.AsNoTracking().AsQueryable();
         if (!string.IsNullOrEmpty(search))
             query = query.Where(w => w.FullName.Contains(search) || w.JobTitle.Contains(search));
         if (!string.IsNullOrEmpty(status))
             query = query.Where(w => w.EmploymentStatus == status);
 
-        var items = await query.OrderBy(w => w.FullName)
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var total = await query.CountAsync();
+        page = Math.Min(page, Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)));
+        var descending = string.Equals(sortDirection, "desc", StringComparison.OrdinalIgnoreCase);
+        var ordered = (sortBy?.ToLowerInvariant()) switch
+        {
+            "jobtitle" => descending ? query.OrderByDescending(w => w.JobTitle) : query.OrderBy(w => w.JobTitle),
+            "dailywage" => descending ? query.OrderByDescending(w => w.DailyWage) : query.OrderBy(w => w.DailyWage),
+            _ => descending ? query.OrderByDescending(w => w.FullName) : query.OrderBy(w => w.FullName)
+        };
+        var items = await ordered.Skip((page - 1) * pageSize).Take(pageSize)
             .Select(w => ToDto(w)).ToListAsync();
-        return Ok(items);
+        return Ok(new PagedResult<WorkerDto>(items, total, page, pageSize));
     }
 
     [HttpGet("{id}")]
     public async Task<ActionResult<WorkerDto>> GetById(int id)
     {
-        var w = await _db.Workers.FindAsync(id);
+        var w = await _db.Workers.AsNoTracking().FirstOrDefaultAsync(w => w.Id == id);
         if (w == null) return NotFound();
         return Ok(ToDto(w));
     }
@@ -91,7 +105,7 @@ public class AttendanceController : ControllerBase
     public async Task<ActionResult<IEnumerable<AttendanceDto>>> GetAll(
         [FromQuery] int? workerId, [FromQuery] int? projectId, [FromQuery] DateTime? date)
     {
-        var query = _db.WorkerAttendances.Include(a => a.Worker).Include(a => a.Project).AsQueryable();
+        var query = _db.WorkerAttendances.AsNoTracking().AsQueryable();
         if (workerId.HasValue) query = query.Where(a => a.WorkerId == workerId.Value);
         if (projectId.HasValue) query = query.Where(a => a.ProjectId == projectId.Value);
         if (date.HasValue) query = query.Where(a => a.AttendanceDate.Date == date.Value.Date);
@@ -107,7 +121,7 @@ public class AttendanceController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(CreateAttendanceDto dto)
     {
-        var worker = await _db.Workers.FindAsync(dto.WorkerId);
+        var worker = await _db.Workers.AsNoTracking().FirstOrDefaultAsync(w => w.Id == dto.WorkerId);
         if (worker == null) return NotFound(new { message = "Worker not found" });
 
         decimal wage = dto.Status switch

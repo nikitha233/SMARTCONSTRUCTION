@@ -1,33 +1,39 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { dashboardApi } from '../services/api';
+import { useRequestController } from '../hooks/useRequestController';
 import { formatCurrency, formatDate, daysUntil } from '../utils/helpers';
-import { StatCard, StatusBadge, ProgressBar, LoadingSpinner, EmptyState } from '../components/UI';
+import { StatCard, StatusBadge, ProgressBar, SkeletonLoader, EmptyState } from '../components/UI';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    PieChart, Pie, Cell, Legend
+    Legend
 } from 'recharts';
 import {
     FolderOpen, CheckCircle, TrendingUp, DollarSign,
     Package, Truck, AlertTriangle, Activity, Plus, ArrowRight
 } from 'lucide-react';
 
-const PICOLORS = ['#52b788', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
-
 export default function Dashboard() {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const createRequestController = useRequestController();
 
     useEffect(() => {
-        dashboardApi.get()
+        const controller = createRequestController();
+        dashboardApi.get({ signal: controller.signal })
             .then(r => setData(r.data))
-            .catch(() => setError('Failed to load dashboard data.'))
-            .finally(() => setLoading(false));
-    }, []);
+            .catch(() => { if (!controller.signal.aborted) setError('Failed to load dashboard data.'); })
+            .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+        return () => controller.abort();
+    }, [createRequestController]);
 
-    if (loading) return <LoadingSpinner fullPage />;
-    if (error) return <div className="alert alert-danger">{error}</div>;
+    if (loading) return <SkeletonLoader fullPage variant="cards" rows={4} />;
+    if (error) return (
+        <div className="alert alert-danger" role="alert">
+            {error} <button className="btn btn-outline btn-sm" onClick={() => window.location.reload()}>Try again</button>
+        </div>
+    );
     if (!data) return null;
 
     const budgetData = data.recentProjects.map(p => ({
@@ -142,7 +148,7 @@ export default function Dashboard() {
                         </Link>
                     </div>
                     {data.recentProjects.length === 0 ? (
-                        <EmptyState title="No projects yet" />
+                        <EmptyState title="No projects yet" description="Create a project to see its budget and progress here." action={<Link className="btn btn-primary" to="/projects">Open projects</Link>} />
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                             {data.recentProjects.map(p => (

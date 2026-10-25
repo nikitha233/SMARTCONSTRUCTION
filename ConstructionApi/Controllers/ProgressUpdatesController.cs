@@ -20,23 +20,31 @@ public class ProgressUpdatesController : ControllerBase
     public async Task<ActionResult<IEnumerable<ProgressUpdateDto>>> GetAll(
         [FromQuery] int? projectId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
     {
-        var query = _db.ProgressUpdates.Include(pu => pu.Project).Include(pu => pu.ConstructionStage).AsQueryable();
+        var query = _db.ProgressUpdates.AsNoTracking().AsQueryable();
         if (projectId.HasValue) query = query.Where(pu => pu.ProjectId == projectId.Value);
         if (fromDate.HasValue) query = query.Where(pu => pu.UpdateDate >= fromDate.Value);
         if (toDate.HasValue) query = query.Where(pu => pu.UpdateDate <= toDate.Value);
 
         var items = await query.OrderByDescending(pu => pu.UpdateDate)
-            .Select(pu => ToDto(pu)).ToListAsync();
+            .Select(pu => new ProgressUpdateDto(pu.Id, pu.ProjectId, pu.Project.Name, pu.ConstructionStageId,
+                pu.ConstructionStage != null ? pu.ConstructionStage.StageName : null, pu.UpdateDate,
+                pu.CompletionPercentage, pu.WorkCompletedToday, pu.WorkPlannedForTomorrow,
+                pu.IssuesAndDelays, pu.SafetyObservations, pu.ResponsibleEngineer, pu.PhotoPath, pu.CreatedAt))
+            .ToListAsync();
         return Ok(items);
     }
 
     [HttpGet("{id}")]
     public async Task<ActionResult<ProgressUpdateDto>> GetById(int id)
     {
-        var pu = await _db.ProgressUpdates.Include(x => x.Project).Include(x => x.ConstructionStage)
-            .FirstOrDefaultAsync(x => x.Id == id);
+        var pu = await _db.ProgressUpdates.AsNoTracking().Where(x => x.Id == id)
+            .Select(x => new ProgressUpdateDto(x.Id, x.ProjectId, x.Project.Name, x.ConstructionStageId,
+                x.ConstructionStage != null ? x.ConstructionStage.StageName : null, x.UpdateDate,
+                x.CompletionPercentage, x.WorkCompletedToday, x.WorkPlannedForTomorrow,
+                x.IssuesAndDelays, x.SafetyObservations, x.ResponsibleEngineer, x.PhotoPath, x.CreatedAt))
+            .FirstOrDefaultAsync();
         if (pu == null) return NotFound();
-        return Ok(ToDto(pu));
+        return Ok(pu);
     }
 
     [HttpPost]
@@ -68,10 +76,14 @@ public class ProgressUpdatesController : ControllerBase
         }
 
         // Update project completion percentage as weighted average of stages
-        var stages = await _db.ConstructionStages.Where(s => s.ProjectId == dto.ProjectId).ToListAsync();
+        var stages = await _db.ConstructionStages.AsNoTracking()
+            .Where(s => s.ProjectId == dto.ProjectId)
+            .Select(s => new { s.Id, s.CompletionPercentage })
+            .ToListAsync();
         if (stages.Count > 0)
         {
-            var avg = (int)stages.Average(s => s.CompletionPercentage);
+            var avg = (int)stages.Average(s =>
+                s.Id == dto.ConstructionStageId ? dto.CompletionPercentage : s.CompletionPercentage);
             var project = await _db.Projects.FindAsync(dto.ProjectId);
             if (project != null) { project.CompletionPercentage = avg; project.UpdatedAt = DateTime.UtcNow; }
         }

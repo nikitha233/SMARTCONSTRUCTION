@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 // Reusable UI components
 
 export function StatusBadge({ status }) {
@@ -29,15 +31,20 @@ export function ProgressBar({ percent, showLabel = true }) {
     );
 }
 
-export function LoadingSpinner({ fullPage = false }) {
-    if (fullPage) return (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-            <div className="loading-spinner" style={{ width: 48, height: 48 }} />
-        </div>
-    );
+export function SkeletonLoader({ fullPage = false, variant = 'table', rows = 5 }) {
     return (
-        <div className="loading-overlay">
-            <div className="loading-spinner" />
+        <div className={fullPage ? 'page-skeleton page-skeleton-full' : 'page-skeleton'} aria-busy="true" aria-label="Loading content">
+            <div className="skeleton-block skeleton-heading" />
+            <div className="skeleton-block skeleton-toolbar" />
+            <div className={`skeleton-content skeleton-${variant}`}>
+                {Array.from({ length: rows }, (_, index) => (
+                    <div className="skeleton-block skeleton-row" key={index}>
+                        <span />
+                        <span />
+                        <span />
+                    </div>
+                ))}
+            </div>
         </div>
     );
 }
@@ -53,10 +60,26 @@ export function EmptyState({ icon, title, description, action }) {
     );
 }
 
+export function DataTable({ children, className = 'table-responsive' }) {
+    return <div className={className}>{children}</div>;
+}
+
 export function ConfirmDialog({ isOpen, title, message, onConfirm, onCancel, danger = true }) {
+    const [confirming, setConfirming] = useState(false);
     if (!isOpen) return null;
+
+    const confirm = async () => {
+        if (confirming) return;
+        setConfirming(true);
+        try {
+            await onConfirm();
+        } finally {
+            setConfirming(false);
+        }
+    };
+
     return (
-        <div className="modal-overlay" onClick={onCancel}>
+        <div className="modal-overlay" onClick={confirming ? undefined : onCancel}>
             <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <span className="modal-title">{title || 'Confirm Action'}</span>
@@ -65,8 +88,10 @@ export function ConfirmDialog({ isOpen, title, message, onConfirm, onCancel, dan
                     <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>{message}</p>
                 </div>
                 <div className="modal-footer">
-                    <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
-                    <button className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} onClick={onConfirm}>Confirm</button>
+                    <button className="btn btn-outline" onClick={onCancel} disabled={confirming}>Cancel</button>
+                    <button className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} onClick={confirm} disabled={confirming}>
+                        {confirming ? 'Working…' : 'Confirm'}
+                    </button>
                 </div>
             </div>
         </div>
@@ -141,6 +166,24 @@ export function FormField({ label, required, error, children }) {
             <label className="form-label">{label}{required && <span style={{ color: 'var(--danger)' }}> *</span>}</label>
             {children}
             {error && <span className="form-error">{error}</span>}
+        </div>
+    );
+}
+
+export function Pagination({ page, pageSize, totalCount, onPageChange }) {
+    const pageCount = Math.ceil(totalCount / pageSize);
+    if (pageCount <= 1) return null;
+
+    return (
+        <div className="pagination-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 16 }}>
+            <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalCount)} of {totalCount}
+            </span>
+            <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-outline btn-sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>Previous</button>
+                <span style={{ alignSelf: 'center', fontSize: 13 }}>Page {page} of {pageCount}</span>
+                <button className="btn btn-outline btn-sm" disabled={page >= pageCount} onClick={() => onPageChange(page + 1)}>Next</button>
+            </div>
         </div>
     );
 }

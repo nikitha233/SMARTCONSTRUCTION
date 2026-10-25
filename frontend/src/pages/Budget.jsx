@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { reportsApi, projectsApi } from '../services/api';
-import { useToast } from '../context/ToastContext';
+import { reportsApi } from '../services/api';
+import { useRequestController } from '../hooks/useRequestController';
+import { useToast } from '../context/useToast';
 import { formatCurrency } from '../utils/helpers';
-import { StatCard, ProgressBar, LoadingSpinner, EmptyState, PageHeader } from '../components/UI';
+import { StatCard, ProgressBar, SkeletonLoader, EmptyState, PageHeader, DataTable } from '../components/UI';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend
@@ -17,22 +18,25 @@ export default function Budget() {
     const [expenseData, setExpenseData] = useState(null);
     const [loading, setLoading] = useState(true);
     const toast = useToast();
+    const createRequestController = useRequestController();
 
     useEffect(() => {
+        const controller = createRequestController();
         Promise.all([
-            reportsApi.projectSummary(),
-            reportsApi.expenses(),
+            reportsApi.projectSummary(undefined, { signal: controller.signal }),
+            reportsApi.expenses(undefined, { signal: controller.signal }),
         ])
             .then(([sumRes, expRes]) => {
                 const list = Array.isArray(sumRes.data) ? sumRes.data : (sumRes.data ? [sumRes.data] : []);
                 setSummary(list);
                 setExpenseData(expRes.data);
             })
-            .catch(() => toast.error('Failed to load budget data'))
-            .finally(() => setLoading(false));
-    }, []);
+            .catch(() => { if (!controller.signal.aborted) toast.error('Failed to load budget data'); })
+            .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+        return () => controller.abort();
+    }, [createRequestController, toast]);
 
-    if (loading) return <LoadingSpinner fullPage />;
+    if (loading) return <SkeletonLoader fullPage variant="cards" rows={4} />;
 
     const totalEstimated = summary.reduce((acc, p) => acc + (Number(p.estimatedBudget) || 0), 0);
     const totalActual = summary.reduce((acc, p) => acc + (Number(p.actualCost) || 0), 0);
@@ -178,8 +182,8 @@ export default function Budget() {
                 <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
                     <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Project-by-Project Variance Ledger</h3>
                 </div>
-                <div className="table-responsive">
-                    <table className="data-table">
+                <DataTable className="table-responsive">
+<table className="data-table">
                         <thead>
                             <tr>
                                 <th>Project Name</th>
@@ -192,7 +196,13 @@ export default function Budget() {
                             </tr>
                         </thead>
                         <tbody>
-                            {summary.map(p => {
+                            {summary.length === 0 ? (
+                                <tr><td colSpan={7}><EmptyState
+                                    title="No project budget data yet"
+                                    description="Create a project to start tracking budgets and costs."
+                                    action={<Link to="/projects" className="btn btn-primary" style={{ marginTop: 12 }}>View projects</Link>}
+                                /></td></tr>
+                            ) : summary.map(p => {
                                 const remaining = (Number(p.estimatedBudget) || 0) - (Number(p.actualCost) || 0);
                                 const isOver = remaining < 0;
                                 const utilization = p.estimatedBudget > 0 ? Math.round(((Number(p.actualCost) || 0) / Number(p.estimatedBudget)) * 100) : 0;
@@ -229,7 +239,7 @@ export default function Budget() {
                             })}
                         </tbody>
                     </table>
-                </div>
+</DataTable>
             </div>
         </div>
     );

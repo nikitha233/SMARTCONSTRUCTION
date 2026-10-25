@@ -17,6 +17,16 @@ public static class DbSeeder
     {
         // Ensure database is created
         await context.Database.EnsureCreatedAsync();
+        string[] indexStatements =
+        [
+            "CREATE INDEX IF NOT EXISTS \"IX_Projects_Status\" ON \"Projects\" (\"Status\");",
+            "CREATE INDEX IF NOT EXISTS \"IX_Expenses_ProjectId_ExpenseDate\" ON \"Expenses\" (\"ProjectId\", \"ExpenseDate\");",
+            "CREATE INDEX IF NOT EXISTS \"IX_WorkerAttendances_WorkerId_AttendanceDate\" ON \"WorkerAttendances\" (\"WorkerId\", \"AttendanceDate\");",
+            "CREATE INDEX IF NOT EXISTS \"IX_Materials_IsActive\" ON \"Materials\" (\"IsActive\");",
+            "CREATE INDEX IF NOT EXISTS \"IX_Equipment_NextMaintenanceDate\" ON \"Equipment\" (\"NextMaintenanceDate\");"
+        ];
+        foreach (var statement in indexStatements)
+            await context.Database.ExecuteSqlRawAsync(statement);
 
         // Seed Roles
         string[] roles = ["Admin", "ProjectManager", "SiteEngineer", "StoreManager"];
