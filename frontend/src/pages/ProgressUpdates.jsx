@@ -6,8 +6,10 @@ import { formatDate } from '../utils/helpers';
 import { ProgressBar, SkeletonLoader, EmptyState, Modal, PageHeader, FormField } from '../components/UI';
 import { Plus, TrendingUp, AlertTriangle, ShieldCheck, Calendar } from 'lucide-react';
 import { useRequestController } from '../hooks/useRequestController';
+import { useApi } from '../hooks/useApi';
 
 const TODAY_DATE = new Date().toISOString().slice(0, 10);
+const EMPTY_UPDATES = [];
 
 const emptyForm = {
     projectId: '',
@@ -22,11 +24,9 @@ const emptyForm = {
 };
 
 export default function ProgressUpdates() {
-    const [updates, setUpdates] = useState([]);
     const [projects, setProjects] = useState([]);
     const [stages, setStages] = useState([]);
     const [selectedProject, setSelectedProject] = useState('');
-    const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
     const [form, setForm] = useState(emptyForm);
     const [saving, setSaving] = useState(false);
@@ -35,6 +35,15 @@ export default function ProgressUpdates() {
     const { user, isAdminOrManager } = useAuth();
     const createRequestController = useRequestController();
     const stagesControllerRef = useRef(null);
+    const fetchUpdates = useCallback(async (signal) => {
+        const res = await progressApi.getAll(selectedProject ? { projectId: selectedProject } : {}, { signal });
+        return res.data;
+    }, [selectedProject]);
+    const { data: updates = EMPTY_UPDATES, loading, error, refetch: loadUpdates } = useApi(fetchUpdates, { initialData: EMPTY_UPDATES });
+
+    useEffect(() => {
+        if (error) toast.error(error.response?.data?.message || 'Failed to load progress reports');
+    }, [error, toast]);
 
     const loadProjects = useCallback(async (signal) => {
         try {
@@ -45,28 +54,11 @@ export default function ProgressUpdates() {
         }
     }, [toast]);
 
-    const loadUpdates = useCallback(async (signal) => {
-        try {
-            const res = await progressApi.getAll(selectedProject ? { projectId: selectedProject } : {}, { signal });
-            setUpdates(res.data);
-        } catch {
-            if (!signal?.aborted) toast.error('Failed to load progress reports');
-        } finally {
-            if (!signal?.aborted) setLoading(false);
-        }
-    }, [selectedProject, toast]);
-
     useEffect(() => {
         const controller = createRequestController();
         queueMicrotask(() => { if (!controller.signal.aborted) loadProjects(controller.signal); });
         return () => controller.abort();
     }, [createRequestController, loadProjects]);
-
-    useEffect(() => {
-        const controller = createRequestController();
-        queueMicrotask(() => { if (!controller.signal.aborted) loadUpdates(controller.signal); });
-        return () => controller.abort();
-    }, [createRequestController, loadUpdates, selectedProject]);
 
     // When project changes in the form, fetch its stages
     const handleProjectChangeInForm = async (projId) => {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRequestController } from '../hooks/useRequestController';
+import { useApi } from '../hooks/useApi';
 import { stagesApi, lookupApi } from '../services/api';
 import { useToast } from '../context/useToast';
 import { useAuth } from '../context/useAuth';
@@ -8,6 +9,7 @@ import { StatusBadge, ProgressBar, SkeletonLoader, EmptyState, ConfirmDialog, Mo
 import { Plus, Pencil, Trash2, HardHat } from 'lucide-react';
 
 const TODAY_DATE = new Date().toISOString().slice(0, 10);
+const EMPTY_STAGES = [];
 
 const STATUS_OPTIONS = ['NotStarted', 'InProgress', 'Completed', 'Delayed', 'OnHold'];
 
@@ -26,10 +28,8 @@ const emptyForm = {
 };
 
 export default function Stages() {
-    const [stages, setStages] = useState([]);
     const [projects, setProjects] = useState([]);
     const [selectedProject, setSelectedProject] = useState('');
-    const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
     const [editStage, setEditStage] = useState(null);
     const [form, setForm] = useState(emptyForm);
@@ -39,6 +39,15 @@ export default function Stages() {
     const toast = useToast();
     const { isAdminOrManager } = useAuth();
     const createRequestController = useRequestController();
+    const fetchStages = useCallback(async (signal) => {
+        const res = await stagesApi.getAll(selectedProject ? { projectId: selectedProject } : {}, { signal });
+        return res.data;
+    }, [selectedProject]);
+    const { data: stages = EMPTY_STAGES, loading, error, refetch: loadStages } = useApi(fetchStages, { initialData: EMPTY_STAGES });
+
+    useEffect(() => {
+        if (error) toast.error(error.response?.data?.message || 'Failed to load stages');
+    }, [error, toast]);
 
     const loadProjects = useCallback(async (signal) => {
         try {
@@ -49,28 +58,11 @@ export default function Stages() {
         }
     }, [toast]);
 
-    const loadStages = useCallback(async (signal) => {
-        try {
-            const res = await stagesApi.getAll(selectedProject ? { projectId: selectedProject } : {}, { signal });
-            setStages(res.data);
-        } catch {
-            if (!signal?.aborted) toast.error('Failed to load stages');
-        } finally {
-            if (!signal?.aborted) setLoading(false);
-        }
-    }, [selectedProject, toast]);
-
     useEffect(() => {
         const controller = createRequestController();
         queueMicrotask(() => { if (!controller.signal.aborted) loadProjects(controller.signal); });
         return () => controller.abort();
     }, [createRequestController, loadProjects]);
-
-    useEffect(() => {
-        const controller = createRequestController();
-        queueMicrotask(() => { if (!controller.signal.aborted) loadStages(controller.signal); });
-        return () => controller.abort();
-    }, [createRequestController, loadStages]);
 
     const openCreate = () => {
         setEditStage(null);

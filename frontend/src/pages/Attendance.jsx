@@ -6,8 +6,10 @@ import { formatCurrency, formatDate } from '../utils/helpers';
 import { StatusBadge, SkeletonLoader, EmptyState, Modal, PageHeader, FormField, DataTable } from '../components/UI';
 import { Plus, CheckCircle, XCircle, Clock, Calendar, Users, CheckSquare } from 'lucide-react';
 import { useRequestController } from '../hooks/useRequestController';
+import { useApi } from '../hooks/useApi';
 
 const TODAY_DATE = new Date().toISOString().slice(0, 10);
+const EMPTY_RECORDS = [];
 
 const STATUS_OPTS = ['Present', 'HalfDay', 'Absent'];
 
@@ -20,12 +22,10 @@ const emptyForm = {
 };
 
 export default function Attendance() {
-    const [records, setRecords] = useState([]);
     const [workers, setWorkers] = useState([]);
     const [projects, setProjects] = useState([]);
     const [dateFilter, setDateFilter] = useState(TODAY_DATE);
     const [projectFilter, setProjectFilter] = useState('');
-    const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
     const [form, setForm] = useState(emptyForm);
     const [saving, setSaving] = useState(false);
@@ -33,6 +33,18 @@ export default function Attendance() {
     const toast = useToast();
     const { isAdminOrManager } = useAuth();
     const createRequestController = useRequestController();
+    const fetchAttendance = useCallback(async (signal) => {
+        const params = {};
+        if (dateFilter) params.date = dateFilter;
+        if (projectFilter) params.projectId = projectFilter;
+        const res = await attendanceApi.getAll(params, { signal });
+        return res.data;
+    }, [dateFilter, projectFilter]);
+    const { data: records = EMPTY_RECORDS, loading, error, refetch: loadAttendance } = useApi(fetchAttendance, { initialData: EMPTY_RECORDS });
+
+    useEffect(() => {
+        if (error) toast.error(error.response?.data?.message || 'Failed to load attendance records');
+    }, [error, toast]);
 
     const loadMetadata = useCallback(async (signal) => {
         try {
@@ -44,31 +56,11 @@ export default function Attendance() {
         }
     }, [toast]);
 
-    const loadAttendance = useCallback(async (signal) => {
-        try {
-            const params = {};
-            if (dateFilter) params.date = dateFilter;
-            if (projectFilter) params.projectId = projectFilter;
-            const res = await attendanceApi.getAll(params, { signal });
-            setRecords(res.data);
-        } catch {
-            if (!signal?.aborted) toast.error('Failed to load attendance records');
-        } finally {
-            if (!signal?.aborted) setLoading(false);
-        }
-    }, [dateFilter, projectFilter, toast]);
-
     useEffect(() => {
         const controller = createRequestController();
         queueMicrotask(() => { if (!controller.signal.aborted) loadMetadata(controller.signal); });
         return () => controller.abort();
     }, [createRequestController, loadMetadata]);
-
-    useEffect(() => {
-        const controller = createRequestController();
-        queueMicrotask(() => { if (!controller.signal.aborted) loadAttendance(controller.signal); });
-        return () => controller.abort();
-    }, [createRequestController, loadAttendance]);
 
     const openMarkModal = () => {
         setForm({
