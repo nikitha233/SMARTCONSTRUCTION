@@ -40,7 +40,10 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 .AddDefaultTokenProviders();
 
 // ─── JWT Authentication ──────────────────────────────────────────────────────
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "BuildSmartSuperSecretKey2024_ChangeThis!";
+var jwtKey = builder.Configuration["Jwt:Key"];
+if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
+    throw new InvalidOperationException("Jwt:Key must be configured with a secret of at least 32 bytes.");
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -120,7 +123,7 @@ using (var scope = app.Services.CreateScope())
         var db = services.GetRequiredService<AppDbContext>();
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
         var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
-        await DbSeeder.SeedAsync(db, userManager, roleManager);
+        await DbSeeder.SeedAsync(db, userManager, roleManager, builder.Configuration, app.Environment);
     }
     catch (Exception ex)
     {

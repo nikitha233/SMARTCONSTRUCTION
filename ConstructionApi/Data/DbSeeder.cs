@@ -1,12 +1,19 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using ConstructionApi.Models;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Configuration;
 
 namespace ConstructionApi.Data;
 
 public static class DbSeeder
 {
-    public static async Task SeedAsync(AppDbContext context, UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager)
+    public static async Task SeedAsync(
+        AppDbContext context,
+        UserManager<ApplicationUser> userManager,
+        RoleManager<IdentityRole> roleManager,
+        IConfiguration configuration,
+        IHostEnvironment environment)
     {
         // Ensure database is created
         await context.Database.EnsureCreatedAsync();
@@ -19,11 +26,34 @@ public static class DbSeeder
                 await roleManager.CreateAsync(new IdentityRole(role));
         }
 
-        // Seed Users (only if they don't exist)
-        await SeedUser(userManager, "admin@buildsmart.com", "Admin@123!", "Admin User", "Admin");
-        await SeedUser(userManager, "pm@buildsmart.com", "Manager@123!", "Sarah Johnson", "ProjectManager");
-        await SeedUser(userManager, "engineer@buildsmart.com", "Engineer@123!", "Ravi Kumar", "SiteEngineer");
-        await SeedUser(userManager, "store@buildsmart.com", "Store@123!", "Priya Nair", "StoreManager");
+        // Deactivate accounts created by older versions with published demo passwords.
+        string[] legacyDemoEmails =
+        [
+            "admin@buildsmart.com",
+            "pm@buildsmart.com",
+            "engineer@buildsmart.com",
+            "store@buildsmart.com"
+        ];
+        foreach (var email in legacyDemoEmails)
+        {
+            var legacyUser = await userManager.FindByEmailAsync(email);
+            if (legacyUser is not null && legacyUser.IsActive)
+            {
+                legacyUser.IsActive = false;
+                await userManager.UpdateAsync(legacyUser);
+            }
+        }
+
+        // A development administrator is created only when explicitly enabled through local secrets.
+        if (environment.IsDevelopment() && configuration.GetValue<bool>("Seed:Admin:Enabled"))
+        {
+            var email = configuration["Seed:Admin:Email"];
+            var password = configuration["Seed:Admin:Password"];
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+                throw new InvalidOperationException("Seed:Admin:Email and Seed:Admin:Password are required when development admin seeding is enabled.");
+
+            await SeedUser(userManager, email, password, "Local Development Admin", "Admin");
+        }
 
         // Seed Projects
         if (!await context.Projects.AnyAsync())
