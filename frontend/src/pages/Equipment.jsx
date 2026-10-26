@@ -21,6 +21,55 @@ const CATEGORIES = [
     'Transport'
 ];
 
+const EQUIPMENT_SUGGESTIONS = {
+    'Concrete Equipment': [
+        'Transit Mixer (6 m³ / Schwing Stetter)',
+        'Concrete Mixer (1 Bag / 10/7 CFT)',
+        'Concrete Boom Pump (36m Putzmeister)',
+        'Concrete Needle Vibrator (2 HP)',
+        'Power Trowel / Concrete Float Machine',
+        'Stationary Concrete Pump (Putzmeister SP 1800)',
+        'Mobile Batching Plant (30 m³/hr)',
+    ],
+    'Lifting Equipment': [
+        'ACE 15XW Hydra Crane',
+        'Tower Crane (50 Ton Liebherr)',
+        'Crawler Crane (75 Ton Tata Hitachi)',
+        'Material Hoist (1.5 Ton)',
+        'Diesel Forklift (3 Ton Godrej)',
+    ],
+    'Earthwork Equipment': [
+        'Hydraulic Excavator (CAT 320D)',
+        'Backhoe Loader (JCB 3DX Super)',
+        'Bulldozer (CAT D6)',
+        'Mini Excavator (Kubota 3 Ton)',
+        'Motor Grader (CAT 120K)',
+        'Wheel Loader (Liugong)',
+    ],
+    'Compaction Equipment': [
+        'Vibratory Soil Compactor (10 Ton)',
+        'Plate Compactor (Diesel 5 HP)',
+        'Tandem Asphalt Roller (3 Ton Dynapac)',
+        'Tamping Rammer / Jumping Jack',
+    ],
+    'Power Equipment': [
+        'Diesel Generator (125 KVA Kirloskar)',
+        'Screw Air Compressor (400 CFM Atlas Copco)',
+        'DG Set (250 KVA Cummins)',
+        'Mobile Lighting Mast (4x1000W LED)',
+    ],
+    'Transport': [
+        'Heavy Tipper Truck (16 m³ Tata 2518)',
+        'Water Tanker Truck (10,000 Litres)',
+        'Tractor Trolley',
+    ],
+    'Safety Equipment': [
+        'Scaffolding System (Cuplock Heavy Duty)',
+        'Aluminium Mobile Scaffolding Tower',
+        'Safety Netting & Perimeter Guardrails',
+    ],
+};
+
 const AVAILABILITY_OPTS = ['Available', 'Assigned', 'UnderMaintenance', 'Unavailable'];
 const CONDITION_OPTS = ['Good', 'Fair', 'Poor'];
 const OWNERSHIP_OPTS = ['Owned', 'Rented'];
@@ -70,7 +119,8 @@ export default function Equipment() {
     const [maintenanceSaving, setMaintenanceSaving] = useState(false);
 
     const toast = useToast();
-    const { isAdminOrManager } = useAuth();
+    const { isAdminOrManager, isAdmin, hasRole } = useAuth();
+    const canManageEquipment = () => hasRole('Admin', 'ProjectManager', 'SiteEngineer');
 
     const fetchEquipment = useCallback(async (signal) => {
         const response = await equipmentApi.getAll({ category: categoryFilter, availability: availabilityFilter, search: debouncedSearch, page, pageSize }, { signal });
@@ -219,7 +269,7 @@ export default function Equipment() {
                 title="Machinery & Heavy Equipment"
                 subtitle="Plant fleet status, ownership models, rental day costs, and maintenance logs"
             >
-                {isAdminOrManager() && (
+                {canManageEquipment() && (
                     <button className="btn btn-primary" onClick={openCreate}>
                         <Plus size={16} /> Add Equipment
                     </button>
@@ -266,7 +316,7 @@ export default function Equipment() {
                     title="No equipment found"
                     description="Register cranes, hydras, backhoes, and transit mixers to your fleet."
                     action={
-                        isAdminOrManager() && (
+                        canManageEquipment() && (
                             <button className="btn btn-primary" onClick={openCreate} style={{ marginTop: 16 }}>
                                 <Plus size={16} /> Add Equipment
                             </button>
@@ -326,14 +376,16 @@ export default function Equipment() {
                                     <Wrench size={13} style={{ marginRight: 4 }} /> Maintenance
                                 </button>
 
-                                {isAdminOrManager() && (
+                                {canManageEquipment() && (
                                     <div style={{ display: 'flex', gap: 6 }}>
                                         <button className="btn-icon" title="Edit" onClick={() => openEdit(eq)}>
                                             <Pencil size={15} />
                                         </button>
-                                        <button className="btn-icon" title="Delete" style={{ color: 'var(--danger)' }} onClick={() => setDeleteId(eq.id)}>
-                                            <Trash2 size={15} />
-                                        </button>
+                                        {isAdmin() && (
+                                            <button className="btn-icon" title="Delete" style={{ color: 'var(--danger)' }} onClick={() => setDeleteId(eq.id)}>
+                                                <Trash2 size={15} />
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -368,8 +420,15 @@ export default function Equipment() {
                                 placeholder="e.g. ACE 15XW Hydra Crane"
                                 value={form.name}
                                 onChange={e => setForm({ ...form, name: e.target.value })}
+                                list="equipment-name-suggestions"
+                                autoComplete="off"
                                 required
                             />
+                            <datalist id="equipment-name-suggestions">
+                                {(EQUIPMENT_SUGGESTIONS[form.category] || Object.values(EQUIPMENT_SUGGESTIONS).flat()).map(name => (
+                                    <option key={name} value={name} />
+                                ))}
+                            </datalist>
                         </FormField>
 
                         <FormField label="Asset Code" required>

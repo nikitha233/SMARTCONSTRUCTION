@@ -9,7 +9,7 @@ namespace ConstructionApi.Controllers;
 
 [ApiController]
 [Route("api/stages")]
-[Authorize]
+[Authorize(Roles = "Admin,ProjectManager,SiteEngineer")]
 public class StagesController : ControllerBase
 {
     private readonly AppDbContext _db;

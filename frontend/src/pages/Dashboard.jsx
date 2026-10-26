@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { dashboardApi } from '../services/api';
+import { useAuth } from '../context/useAuth';
 import { useRequestController } from '../hooks/useRequestController';
 import { formatCurrency, formatDate, daysUntil } from '../utils/helpers';
 import { StatCard, StatusBadge, ProgressBar, SkeletonLoader, EmptyState } from '../components/UI';
@@ -12,8 +13,16 @@ import {
     FolderOpen, CheckCircle, TrendingUp, DollarSign,
     Package, Truck, AlertTriangle, Activity, Plus, ArrowRight
 } from 'lucide-react';
+import { EngineerDashboard, StoreDashboard } from './RoleDashboards';
 
 export default function Dashboard() {
+    const { user } = useAuth();
+    if (user?.role === 'SiteEngineer') return <EngineerDashboard />;
+    if (user?.role === 'StoreManager') return <StoreDashboard />;
+    return <ManagementDashboard />;
+}
+
+function ManagementDashboard() {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);

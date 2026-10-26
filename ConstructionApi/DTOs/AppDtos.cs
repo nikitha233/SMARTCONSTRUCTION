@@ -7,7 +7,9 @@ public record WorkerLookupDto(int Id, string FullName);
 // Auth DTOs
 public record LoginDto(string Email, string Password);
 public record RegisterDto(string Email, string Password, string FullName, string Role);
-public record SignUpDto(string Email, string Password, string FullName);
+public record UserAccessDto(string Id, string Email, string FullName, string Role, bool IsActive, DateTime? CreatedAt = null);
+public record UpdateUserAccessDto(string Role, bool IsActive);
+public record SignUpDto(string Email, string Password, string FullName, string? Role = null);
 public record AuthResponseDto(string Token, string UserId, string Email, string FullName, string Role, DateTime Expiry);
 public record ChangePasswordDto(string CurrentPassword, string NewPassword);
 

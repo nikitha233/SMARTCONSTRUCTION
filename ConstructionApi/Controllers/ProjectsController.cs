@@ -9,7 +9,7 @@ namespace ConstructionApi.Controllers;
 
 [ApiController]
 [Route("api/projects")]
-[Authorize]
+[Authorize(Roles = "Admin,ProjectManager,SiteEngineer")]
 public class ProjectsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -24,8 +24,11 @@ public class ProjectsController : ControllerBase
     {
         var query = _db.Projects.AsNoTracking().AsQueryable();
         if (!string.IsNullOrEmpty(status)) query = query.Where(p => p.Status == status);
-        if (!string.IsNullOrEmpty(search))
-            query = query.Where(p => p.Name.Contains(search) || p.ProjectCode.Contains(search) || p.ClientName.Contains(search));
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(p => p.Name.ToLower().Contains(s) || p.ProjectCode.ToLower().Contains(s) || p.ClientName.ToLower().Contains(s));
+        }
 
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);

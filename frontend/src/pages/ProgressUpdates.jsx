@@ -32,7 +32,8 @@ export default function ProgressUpdates() {
     const [saving, setSaving] = useState(false);
 
     const toast = useToast();
-    const { user, isAdminOrManager } = useAuth();
+    const { user, hasRole } = useAuth();
+    const canCreateProgress = hasRole('Admin', 'ProjectManager', 'SiteEngineer');
     const createRequestController = useRequestController();
     const stagesControllerRef = useRef(null);
     const fetchUpdates = useCallback(async (signal) => {
@@ -133,7 +134,7 @@ export default function ProgressUpdates() {
                 title="Progress Updates"
                 subtitle="Daily site operations logs, safety observations, and engineering progress"
             >
-                {isAdminOrManager() && (
+                {canCreateProgress && (
                     <button className="btn btn-primary" onClick={openCreate}>
                         <Plus size={16} /> Log Daily Progress
                     </button>
@@ -164,7 +165,7 @@ export default function ProgressUpdates() {
                     title="No progress updates recorded"
                     description="Log daily site reports to keep track of physical execution and safety records."
                     action={
-                        isAdminOrManager() && (
+                        canCreateProgress && (
                             <button className="btn btn-primary" onClick={openCreate} style={{ marginTop: 16 }}>
                                 <Plus size={16} /> Log First Report
                             </button>

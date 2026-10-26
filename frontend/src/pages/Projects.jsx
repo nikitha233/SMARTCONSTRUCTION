@@ -32,7 +32,7 @@ export default function Projects() {
     const [saving, setSaving] = useState(false);
     const [deleteId, setDeleteId] = useState(null);
     const toast = useToast();
-    const { isAdminOrManager } = useAuth();
+    const { isAdminOrManager, isAdmin } = useAuth();
 
     const fetchProjects = useCallback(async (signal) => {
         const response = await projectsApi.getAll({ search: debouncedSearch, status: statusFilter, page, pageSize }, { signal });
@@ -159,7 +159,7 @@ export default function Projects() {
                                     {isAdminOrManager() && (
                                         <>
                                             <button className="btn btn-outline btn-sm" onClick={() => openEdit(p)}><Pencil size={14} /></button>
-                                            <button className="btn btn-sm" style={{ background: 'var(--danger-light)', color: 'var(--danger)' }} onClick={() => setDeleteId(p.id)}><Trash2 size={14} /></button>
+                                            {isAdmin() && <button className="btn btn-sm" style={{ background: 'var(--danger-light)', color: 'var(--danger)' }} onClick={() => setDeleteId(p.id)}><Trash2 size={14} /></button>}
                                         </>
                                     )}
                                 </div>

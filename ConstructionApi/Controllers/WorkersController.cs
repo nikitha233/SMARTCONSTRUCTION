@@ -9,7 +9,7 @@ namespace ConstructionApi.Controllers;
 
 [ApiController]
 [Route("api/workers")]
-[Authorize]
+[Authorize(Roles = "Admin,ProjectManager,SiteEngineer")]
 public class WorkersController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -22,8 +22,11 @@ public class WorkersController : ControllerBase
         [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null)
     {
         var query = _db.Workers.AsNoTracking().AsQueryable();
-        if (!string.IsNullOrEmpty(search))
-            query = query.Where(w => w.FullName.Contains(search) || w.JobTitle.Contains(search));
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(w => w.FullName.ToLower().Contains(s) || w.JobTitle.ToLower().Contains(s));
+        }
         if (!string.IsNullOrEmpty(status))
             query = query.Where(w => w.EmploymentStatus == status);
 
@@ -95,7 +98,7 @@ public class WorkersController : ControllerBase
 
 [ApiController]
 [Route("api/attendance")]
-[Authorize]
+[Authorize(Roles = "Admin,ProjectManager,SiteEngineer")]
 public class AttendanceController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -119,6 +122,7 @@ public class AttendanceController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = "Admin,ProjectManager,SiteEngineer")]
     public async Task<IActionResult> Create(CreateAttendanceDto dto)
     {
         var worker = await _db.Workers.AsNoTracking().FirstOrDefaultAsync(w => w.Id == dto.WorkerId);

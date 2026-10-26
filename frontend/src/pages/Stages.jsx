@@ -37,7 +37,9 @@ export default function Stages() {
     const [deleteId, setDeleteId] = useState(null);
 
     const toast = useToast();
-    const { isAdminOrManager } = useAuth();
+    const { hasRole } = useAuth();
+    const canManageStages = hasRole('Admin', 'ProjectManager', 'SiteEngineer');
+    const canDeleteStages = hasRole('Admin', 'ProjectManager');
     const createRequestController = useRequestController();
     const fetchStages = useCallback(async (signal) => {
         const res = await stagesApi.getAll(selectedProject ? { projectId: selectedProject } : {}, { signal });
@@ -149,7 +151,7 @@ export default function Stages() {
                 title="Construction Stages"
                 subtitle="Track timeline, execution sequences, and engineering milestones"
             >
-                {isAdminOrManager() && (
+                {canManageStages && (
                     <button className="btn btn-primary" onClick={openCreate}>
                         <Plus size={16} /> Add Stage
                     </button>
@@ -180,7 +182,7 @@ export default function Stages() {
                     title="No construction stages found"
                     description={selectedProject ? "No stages configured for this project yet." : "Select a project or create a new stage to begin tracking milestones."}
                     action={
-                        isAdminOrManager() && (
+                        canManageStages && (
                             <button className="btn btn-primary" onClick={openCreate} style={{ marginTop: 16 }}>
                                 <Plus size={16} /> Create Stage
                             </button>
@@ -200,7 +202,7 @@ export default function Stages() {
                                     <th>Assigned Engineer</th>
                                     <th style={{ width: 140 }}>Completion</th>
                                     <th>Status</th>
-                                    {isAdminOrManager() && <th style={{ textAlign: 'right' }}>Actions</th>}
+                                    {canManageStages && <th style={{ textAlign: 'right' }}>Actions</th>}
                                 </tr>
                             </thead>
                             <tbody>
@@ -229,7 +231,7 @@ export default function Stages() {
                                         <td>
                                             <StatusBadge status={s.status} />
                                         </td>
-                                        {isAdminOrManager() && (
+                                        {canManageStages && (
                                             <td style={{ textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                                                     <button
@@ -239,14 +241,16 @@ export default function Stages() {
                                                     >
                                                         <Pencil size={15} />
                                                     </button>
-                                                    <button
-                                                        className="btn-icon"
-                                                        title="Delete Stage"
-                                                        style={{ color: 'var(--danger)' }}
-                                                        onClick={() => setDeleteId(s.id)}
-                                                    >
-                                                        <Trash2 size={15} />
-                                                    </button>
+                                                    {canDeleteStages && (
+                                                        <button
+                                                            className="btn-icon"
+                                                            title="Delete Stage"
+                                                            style={{ color: 'var(--danger)' }}
+                                                            onClick={() => setDeleteId(s.id)}
+                                                        >
+                                                            <Trash2 size={15} />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         )}

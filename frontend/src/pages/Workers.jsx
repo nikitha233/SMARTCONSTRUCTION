@@ -48,7 +48,7 @@ export default function Workers() {
     const [deleteId, setDeleteId] = useState(null);
 
     const toast = useToast();
-    const { isAdminOrManager } = useAuth();
+    const { isAdminOrManager, isAdmin } = useAuth();
 
     const fetchWorkers = useCallback(async (signal) => {
         const response = await workersApi.getAll({ search: debouncedSearch, status: statusFilter, page, pageSize }, { signal });
@@ -242,14 +242,16 @@ export default function Workers() {
                                                     >
                                                         <Pencil size={15} />
                                                     </button>
-                                                    <button
-                                                        className="btn-icon"
-                                                        title="Delete Worker"
-                                                        style={{ color: 'var(--danger)' }}
-                                                        onClick={() => setDeleteId(w.id)}
-                                                    >
-                                                        <Trash2 size={15} />
-                                                    </button>
+                                                    {isAdmin() && (
+                                                        <button
+                                                            className="btn-icon"
+                                                            title="Delete Worker"
+                                                            style={{ color: 'var(--danger)' }}
+                                                            onClick={() => setDeleteId(w.id)}
+                                                        >
+                                                            <Trash2 size={15} />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         )}

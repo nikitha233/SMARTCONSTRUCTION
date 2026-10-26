@@ -9,7 +9,7 @@ namespace ConstructionApi.Controllers;
 
 [ApiController]
 [Route("api/dashboard")]
-[Authorize]
+[Authorize(Roles = "Admin,ProjectManager")]
 public class DashboardController : ControllerBase
 {
     private readonly AppDbContext _db;

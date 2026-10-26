@@ -31,7 +31,8 @@ export default function Attendance() {
     const [saving, setSaving] = useState(false);
 
     const toast = useToast();
-    const { isAdminOrManager } = useAuth();
+    const { hasRole } = useAuth();
+    const canMarkAttendance = hasRole('Admin', 'ProjectManager', 'SiteEngineer');
     const createRequestController = useRequestController();
     const fetchAttendance = useCallback(async (signal) => {
         const params = {};
@@ -111,7 +112,7 @@ export default function Attendance() {
                 title="Labor Attendance Register"
                 subtitle="Daily biometric & trade attendance, shift roll calls, and daily wage settlements"
             >
-                {isAdminOrManager() && (
+                {canMarkAttendance && (
                     <button className="btn btn-primary" onClick={openMarkModal}>
                         <CheckSquare size={16} /> Mark Attendance
                     </button>
@@ -201,7 +202,7 @@ export default function Attendance() {
                     title="No attendance entries recorded for this date"
                     description="Select another date or click Mark Attendance to log worker presence."
                     action={
-                        isAdminOrManager() && (
+                        canMarkAttendance && (
                             <button className="btn btn-primary" onClick={openMarkModal} style={{ marginTop: 16 }}>
                                 <Plus size={16} /> Mark Attendance Now
                             </button>

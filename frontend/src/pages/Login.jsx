@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import { useToast } from '../context/useToast';
 import { Building2, Eye, EyeOff, Lock, Mail, UserRound } from 'lucide-react';
+import { getHomePath } from '../utils/roleAccess';
 
 export default function Login() {
     const [mode, setMode] = useState('login');
@@ -10,9 +11,11 @@ export default function Login() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [role, setRole] = useState('SiteEngineer');
     const [showPwd, setShowPwd] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [successMessage, setSuccessMessage] = useState('');
     const { login, signup } = useAuth();
     const toast = useToast();
     const navigate = useNavigate();
@@ -20,6 +23,7 @@ export default function Login() {
     const handleSubmit = async (e) => {
         if (e) e.preventDefault();
         setError('');
+        setSuccessMessage('');
         if (mode === 'signup' && !fullName.trim()) {
             setError('Please enter your full name.');
             return;
@@ -35,15 +39,19 @@ export default function Login() {
         setLoading(true);
         try {
             if (mode === 'signup') {
-                await signup(fullName.trim(), email.trim(), password);
+                const res = await signup(fullName.trim(), email.trim(), password, role);
                 toast.success('Your account is ready. Welcome to BuildSmart!');
+                navigate(getHomePath(res?.role || role), { replace: true });
             } else {
-                await login(email.trim(), password);
+                const account = await login(email.trim(), password);
                 toast.success('Welcome back!');
+                navigate(getHomePath(account.role), { replace: true });
             }
-            navigate('/');
         } catch (err) {
-            setError(err.userMessage || err.response?.data?.message || 'Unable to create your account. Please check your details and try again.');
+            const fallback = mode === 'signup'
+                ? 'Unable to create your account. Please check your details and try again.'
+                : 'Unable to sign in. Check your email and password and try again.';
+            setError(err.response?.data?.message || err.userMessage || fallback);
         } finally {
             setLoading(false);
         }
@@ -55,17 +63,20 @@ export default function Login() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: '#eef3f0',
+            backgroundImage: `url('/construction-bg.jpg')`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
             padding: '24px 16px'
         }}>
             <div style={{
                 width: '100%',
-                maxWidth: '420px',
+                maxWidth: '430px',
                 background: '#ffffff',
-                borderRadius: '16px',
-                boxShadow: '0 8px 30px rgba(15, 45, 30, 0.08)',
-                border: '1px solid var(--border)',
-                padding: '36px 32px'
+                borderRadius: '20px',
+                boxShadow: '0 16px 48px rgba(0, 0, 0, 0.25)',
+                border: '1px solid rgba(255, 255, 255, 0.8)',
+                padding: '38px 34px'
             }}>
                 {/* Brand Logo & Name */}
                 <div style={{ textAlign: 'center', marginBottom: 28 }}>
@@ -89,6 +100,22 @@ export default function Login() {
                         Construction Management System
                     </p>
                 </div>
+
+                {successMessage && (
+                    <div style={{
+                        background: '#ecfdf5',
+                        border: '1px solid #a7f3d0',
+                        color: '#065f46',
+                        borderRadius: 8,
+                        padding: '12px 14px',
+                        marginBottom: 18,
+                        fontSize: 13,
+                        lineHeight: 1.4
+                    }}>
+                        <div style={{ fontWeight: 700, marginBottom: 2 }}>✓ Request Submitted</div>
+                        {successMessage}
+                    </div>
+                )}
 
                 {error && (
                     <div className="alert alert-danger" style={{ marginBottom: 18, fontSize: 13 }}>
@@ -118,6 +145,23 @@ export default function Login() {
                                     required
                                 />
                             </div>
+                        </div>
+                    )}
+                    {mode === 'signup' && (
+                        <div className="form-group">
+                            <label className="form-label" htmlFor="role" style={{ fontWeight: 600 }}>Select Role</label>
+                            <select
+                                id="role"
+                                className="form-control"
+                                value={role}
+                                onChange={e => setRole(e.target.value)}
+                                required
+                            >
+                                <option value="Admin">Administrator</option>
+                                <option value="ProjectManager">Project Manager</option>
+                                <option value="SiteEngineer">Site Engineer</option>
+                                <option value="StoreManager">Store Manager</option>
+                            </select>
                         </div>
                     )}
                     <div className="form-group">
@@ -151,7 +195,7 @@ export default function Login() {
                                 value={password}
                                 onChange={e => setPassword(e.target.value)}
                                 autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                                minLength={mode === 'signup' ? 6 : undefined}
+                                minLength={mode === 'signup' ? 8 : undefined}
                                 required
                             />
                             <button
@@ -178,7 +222,7 @@ export default function Login() {
                                 minLength={6}
                                 required
                             />
-                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Use at least 6 characters with an uppercase letter, lowercase letter, and number.</span>
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Use at least 8 characters with an uppercase letter, lowercase letter, and number.</span>
                         </div>
                     )}
 
@@ -203,6 +247,11 @@ export default function Login() {
                         {mode === 'signup' ? 'Sign in' : 'Create an account'}
                     </button>
                 </p>
+                {mode === 'signup' && (
+                    <p style={{ margin: '10px 0 0', textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
+                        Select your assigned role to access the corresponding dashboard and features upon registration.
+                    </p>
+                )}
             </div>
         </div>
     );

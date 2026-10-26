@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AuthContext } from './authContextValue';
 import { authApi } from '../services/api';
+import { getHomePath } from '../utils/roleAccess';
 
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(() => {
@@ -27,7 +28,13 @@ export function AuthProvider({ children }) {
     };
 
     const login = async (email, password) => saveSession(await authApi.login({ email, password }));
-    const signup = async (fullName, email, password) => saveSession(await authApi.signup({ fullName, email, password }));
+    const signup = async (fullName, email, password, role) => {
+        const res = await authApi.signup({ fullName, email, password, role });
+        if (res.data?.token) {
+            return saveSession(res);
+        }
+        return res.data;
+    };
 
     const logout = () => {
         localStorage.removeItem('token');
@@ -35,12 +42,13 @@ export function AuthProvider({ children }) {
         setUser(null);
     };
 
-    const hasRole = (...roles) => user && roles.includes(user.role);
+    const hasRole = (...roles) => Boolean(user && roles.includes(user.role));
     const isAdmin = () => hasRole('Admin');
     const isAdminOrManager = () => hasRole('Admin', 'ProjectManager');
+    const getHome = () => getHomePath(user?.role);
 
     return (
-        <AuthContext.Provider value={{ user, login, signup, logout, loading, hasRole, isAdmin, isAdminOrManager }}>
+        <AuthContext.Provider value={{ user, login, signup, logout, loading, hasRole, isAdmin, isAdminOrManager, getHome }}>
             {children}
         </AuthContext.Provider>
     );

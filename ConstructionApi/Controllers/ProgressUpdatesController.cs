@@ -10,7 +10,7 @@ namespace ConstructionApi.Controllers;
 
 [ApiController]
 [Route("api/progress-updates")]
-[Authorize]
+[Authorize(Roles = "Admin,ProjectManager,SiteEngineer")]
 public class ProgressUpdatesController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -51,6 +51,19 @@ public class ProgressUpdatesController : ControllerBase
     [Authorize(Roles = "Admin,ProjectManager,SiteEngineer")]
     public async Task<IActionResult> Create(CreateProgressUpdateDto dto)
     {
+        if (!await _db.Projects.AnyAsync(project => project.Id == dto.ProjectId))
+            return NotFound(new { message = "Project not found." });
+
+        ConstructionStage? stage = null;
+        if (dto.ConstructionStageId.HasValue)
+        {
+            stage = await _db.ConstructionStages.FindAsync(dto.ConstructionStageId.Value);
+            if (stage == null)
+                return NotFound(new { message = "Construction stage not found." });
+            if (stage.ProjectId != dto.ProjectId)
+                return BadRequest(new { message = "Construction stage must belong to the specified project." });
+        }
+
         var engineer = User.FindFirstValue(ClaimTypes.Name);
         var update = new ProgressUpdate
         {
@@ -63,16 +76,12 @@ public class ProgressUpdatesController : ControllerBase
         _db.ProgressUpdates.Add(update);
 
         // Update stage completion if a stage is referenced
-        if (dto.ConstructionStageId.HasValue)
+        if (stage != null)
         {
-            var stage = await _db.ConstructionStages.FindAsync(dto.ConstructionStageId.Value);
-            if (stage != null)
-            {
-                stage.CompletionPercentage = dto.CompletionPercentage;
-                stage.Status = dto.CompletionPercentage == 100 ? "Completed" : "InProgress";
-                if (stage.ActualStartDate == null) stage.ActualStartDate = dto.UpdateDate;
-                stage.UpdatedAt = DateTime.UtcNow;
-            }
+            stage.CompletionPercentage = dto.CompletionPercentage;
+            stage.Status = dto.CompletionPercentage == 100 ? "Completed" : "InProgress";
+            if (stage.ActualStartDate == null) stage.ActualStartDate = dto.UpdateDate;
+            stage.UpdatedAt = DateTime.UtcNow;
         }
 
         // Update project completion percentage as weighted average of stages

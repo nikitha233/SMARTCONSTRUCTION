@@ -63,7 +63,8 @@ export default function Expenses() {
     const [deleteId, setDeleteId] = useState(null);
 
     const toast = useToast();
-    const { isAdminOrManager } = useAuth();
+    const { hasRole, isAdminOrManager, isAdmin } = useAuth();
+    const canCreateExpense = hasRole('Admin', 'ProjectManager', 'SiteEngineer');
 
     const loadProjects = useCallback(async (signal) => {
         try {
@@ -178,7 +179,7 @@ export default function Expenses() {
                 title="Project Expenditure"
                 subtitle="Track material disbursements, vendor invoices, labor billing, and contractor claims"
             >
-                {isAdminOrManager() && (
+                {canCreateExpense && (
                     <button className="btn btn-primary" onClick={openCreate}>
                         <Plus size={16} /> Record Expense
                     </button>
@@ -238,7 +239,7 @@ export default function Expenses() {
                     title="No expenses found"
                     description="Record invoices, fuel vouchers, cement purchases, and subcontract bills."
                     action={
-                        isAdminOrManager() && (
+                        canCreateExpense && (
                             <button className="btn btn-primary" onClick={openCreate} style={{ marginTop: 16 }}>
                                 <Plus size={16} /> Record Expense
                             </button>
@@ -258,7 +259,7 @@ export default function Expenses() {
                                     <th>Payment Details</th>
                                     <th>Date</th>
                                     <th>Recorded By</th>
-                                    {isAdminOrManager() && <th style={{ textAlign: 'right' }}>Actions</th>}
+                                    {(isAdminOrManager() || isAdmin()) && <th style={{ textAlign: 'right' }}>Actions</th>}
                                 </tr>
                             </thead>
                             <tbody>
@@ -291,15 +292,19 @@ export default function Expenses() {
                                         <td>
                                             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{exp.recordedBy || 'System'}</div>
                                         </td>
-                                        {isAdminOrManager() && (
+                                        {(isAdminOrManager() || isAdmin()) && (
                                             <td style={{ textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                                                    <button className="btn-icon" title="Edit" onClick={() => openEdit(exp)}>
-                                                        <Pencil size={15} />
-                                                    </button>
-                                                    <button className="btn-icon" title="Delete" style={{ color: 'var(--danger)' }} onClick={() => setDeleteId(exp.id)}>
-                                                        <Trash2 size={15} />
-                                                    </button>
+                                                    {isAdminOrManager() && (
+                                                        <button className="btn-icon" title="Edit" onClick={() => openEdit(exp)}>
+                                                            <Pencil size={15} />
+                                                        </button>
+                                                    )}
+                                                    {isAdmin() && (
+                                                        <button className="btn-icon" title="Delete" style={{ color: 'var(--danger)' }} onClick={() => setDeleteId(exp.id)}>
+                                                            <Trash2 size={15} />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         )}

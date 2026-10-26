@@ -10,7 +10,7 @@ namespace ConstructionApi.Controllers;
 
 [ApiController]
 [Route("api/materials")]
-[Authorize]
+[Authorize(Roles = "Admin,StoreManager")]
 public class MaterialsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -24,7 +24,11 @@ public class MaterialsController : ControllerBase
     {
         var query = _db.Materials.AsNoTracking().Where(m => m.IsActive).AsQueryable();
         if (!string.IsNullOrEmpty(category)) query = query.Where(m => m.Category == category);
-        if (!string.IsNullOrEmpty(search)) query = query.Where(m => m.Name.Contains(search));
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(m => m.Name.ToLower().Contains(s) || m.Category.ToLower().Contains(s));
+        }
         if (stockStatus == "low") query = query.Where(m => m.CurrentStock <= m.MinimumStockThreshold);
 
         page = Math.Max(1, page);
@@ -102,7 +106,7 @@ public class MaterialsController : ControllerBase
 
 [ApiController]
 [Route("api/material-transactions")]
-[Authorize]
+[Authorize(Roles = "Admin,StoreManager")]
 public class MaterialTransactionsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -129,6 +133,13 @@ public class MaterialTransactionsController : ControllerBase
     [Authorize(Roles = "Admin,StoreManager")]
     public async Task<IActionResult> Create(CreateMaterialTransactionDto dto)
     {
+        if (dto.Quantity <= 0)
+            return BadRequest(new { message = "Quantity must be greater than zero." });
+        if (dto.UnitCost < 0)
+            return BadRequest(new { message = "Unit cost cannot be negative." });
+        if (dto.TransactionType is not ("Purchase" or "Consumption" or "Adjustment" or "Return"))
+            return BadRequest(new { message = "Transaction type must be Purchase, Consumption, Adjustment, or Return." });
+
         using var transaction = await _db.Database.BeginTransactionAsync();
         try
         {
@@ -138,7 +149,7 @@ public class MaterialTransactionsController : ControllerBase
             decimal newStock = material.CurrentStock;
             if (dto.TransactionType == "Purchase" || dto.TransactionType == "Return")
                 newStock += dto.Quantity;
-            else if (dto.TransactionType == "Consumption" || dto.TransactionType == "Adjustment")
+            else
                 newStock -= dto.Quantity;
 
             if (newStock < 0)

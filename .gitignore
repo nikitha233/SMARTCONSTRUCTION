@@ -1,0 +1,8 @@
+ConstructionApi/bin/
+ConstructionApi/obj/
+ConstructionApi/construction.db*
+ConstructionApi/api-run*.log
+ConstructionApi/appsettings.Development.json
+frontend/node_modules/
+frontend/dist/
+.vscode/

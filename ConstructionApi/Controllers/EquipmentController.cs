@@ -9,7 +9,7 @@ namespace ConstructionApi.Controllers;
 
 [ApiController]
 [Route("api/equipment")]
-[Authorize]
+[Authorize(Roles = "Admin,ProjectManager,SiteEngineer")]
 public class EquipmentController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -25,7 +25,10 @@ public class EquipmentController : ControllerBase
         if (!string.IsNullOrEmpty(category)) query = query.Where(e => e.Category == category);
         if (!string.IsNullOrEmpty(availability)) query = query.Where(e => e.Availability == availability);
         if (!string.IsNullOrWhiteSpace(search))
-            query = query.Where(e => e.Name.Contains(search) || e.EquipmentCode.Contains(search) || e.Category.Contains(search));
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(e => e.Name.ToLower().Contains(s) || e.EquipmentCode.ToLower().Contains(s) || e.Category.ToLower().Contains(s));
+        }
 
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
@@ -52,7 +55,7 @@ public class EquipmentController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Admin,ProjectManager")]
+    [Authorize(Roles = "Admin,ProjectManager,SiteEngineer")]
     public async Task<ActionResult<EquipmentDto>> Create(CreateEquipmentDto dto)
     {
         if (await _db.Equipment.AnyAsync(e => e.EquipmentCode == dto.EquipmentCode))
@@ -75,7 +78,7 @@ public class EquipmentController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [Authorize(Roles = "Admin,ProjectManager")]
+    [Authorize(Roles = "Admin,ProjectManager,SiteEngineer")]
     public async Task<ActionResult<EquipmentDto>> Update(int id, UpdateEquipmentDto dto)
     {
         var equipment = await _db.Equipment.FindAsync(id);
@@ -106,6 +109,7 @@ public class EquipmentController : ControllerBase
     }
 
     [HttpGet("{id}/maintenance")]
+    [Authorize(Roles = "Admin,ProjectManager,SiteEngineer")]
     public async Task<ActionResult> GetMaintenance(int id)
     {
         var records = await _db.EquipmentMaintenanceRecords

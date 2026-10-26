@@ -10,7 +10,7 @@ namespace ConstructionApi.Controllers;
 
 [ApiController]
 [Route("api/expenses")]
-[Authorize]
+[Authorize(Roles = "Admin,ProjectManager,SiteEngineer")]
 public class ExpensesController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -29,8 +29,11 @@ public class ExpensesController : ControllerBase
         if (fromDate.HasValue) query = query.Where(e => e.ExpenseDate >= fromDate.Value);
         if (toDate.HasValue) query = query.Where(e => e.ExpenseDate <= toDate.Value);
         if (!string.IsNullOrWhiteSpace(search))
-            query = query.Where(e => e.Description.Contains(search) || e.Category.Contains(search) ||
-                e.ReferenceNumber.Contains(search) || (e.Project != null && e.Project.Name.Contains(search)));
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(e => e.Description.ToLower().Contains(s) || e.Category.ToLower().Contains(s) ||
+                e.ReferenceNumber.ToLower().Contains(s) || (e.Project != null && e.Project.Name.ToLower().Contains(s)));
+        }
 
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);

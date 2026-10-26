@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.IO.Compression;
+using System.Security.Claims;
 using System.Text;
 using ConstructionApi.Data;
 using ConstructionApi.Middleware;
@@ -22,21 +23,29 @@ if (usePostgres)
     builder.Services.AddDbContext<AppDbContext>(options =>
         options.UseNpgsql(connectionString));
 }
+else if (!string.IsNullOrWhiteSpace(connectionString))
+{
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseSqlite(connectionString));
+}
 else
 {
     // SQLite fallback for development without PostgreSQL
     builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseSqlite("Data Source=construction.db"));
+        options.UseSqlite($"Data Source={Path.Combine(builder.Environment.ContentRootPath, "construction.db")}"));
 }
 
 // ─── Identity ───────────────────────────────────────────────────────────────
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 {
+    options.User.RequireUniqueEmail = true;
     options.Password.RequireDigit = true;
     options.Password.RequireLowercase = true;
     options.Password.RequireUppercase = true;
     options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequiredLength = 6;
+    options.Password.RequiredLength = 8;
+    options.Lockout.MaxFailedAccessAttempts = 5;
+    options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
 })
 .AddEntityFrameworkStores<AppDbContext>()
 .AddDefaultTokenProviders();
@@ -58,10 +67,41 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuer = true,
         ValidateAudience = true,
         ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero,
         ValidateIssuerSigningKey = true,
         ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "BuildSmartApi",
         ValidAudience = builder.Configuration["Jwt:Audience"] ?? "BuildSmartApp",
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+    };
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var userId = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+            var userManager = context.HttpContext.RequestServices.GetRequiredService<UserManager<ApplicationUser>>();
+            var user = userId is null ? null : await userManager.FindByIdAsync(userId);
+            if (user is null || !user.IsActive)
+            {
+                context.Fail("The user account is not active.");
+                return;
+            }
+
+            var roles = await userManager.GetRolesAsync(user);
+            if (!roles.Contains(user.Role, StringComparer.Ordinal) ||
+                context.Principal?.IsInRole(user.Role) != true)
+                context.Fail("The user role has changed.");
+        },
+        OnChallenge = async context =>
+        {
+            context.HandleResponse();
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsJsonAsync(new { message = "Please sign in to continue." });
+        },
+        OnForbidden = async context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new { message = "You do not have permission to do that." });
+        }
     };
 });
 
@@ -142,7 +182,8 @@ using (var scope = app.Services.CreateScope())
     catch (Exception ex)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred while seeding the database.");
+        logger.LogCritical(ex, "Database initialization failed.");
+        throw;
     }
 }
 

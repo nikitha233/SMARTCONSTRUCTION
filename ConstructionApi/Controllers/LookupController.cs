@@ -8,7 +8,7 @@ namespace ConstructionApi.Controllers;
 
 [ApiController]
 [Route("api/lookup")]
-[Authorize]
+[Authorize(Roles = "Admin,ProjectManager,SiteEngineer,StoreManager")]
 public class LookupController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -22,10 +22,12 @@ public class LookupController : ControllerBase
             .OrderBy(p => p.Name)
             .Select(p => new ProjectLookupDto(p.Id, p.Name))
             .ToListAsync();
-        var workers = await _db.Workers.AsNoTracking()
-            .OrderBy(w => w.FullName)
-            .Select(w => new WorkerLookupDto(w.Id, w.FullName))
-            .ToListAsync();
+        var workers = User.IsInRole("Admin") || User.IsInRole("ProjectManager") || User.IsInRole("SiteEngineer")
+            ? await _db.Workers.AsNoTracking()
+                .OrderBy(w => w.FullName)
+                .Select(w => new WorkerLookupDto(w.Id, w.FullName))
+                .ToListAsync()
+            : [];
 
         return Ok(new { projects, workers });
     }

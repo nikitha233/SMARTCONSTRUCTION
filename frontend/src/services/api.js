@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:5259/api';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const api = axios.create({
     baseURL: API_BASE,
@@ -73,6 +73,11 @@ export const authApi = {
     me: () => api.get('/auth/me'),
     changePassword: (data) => api.post('/auth/change-password', data),
     register: (data) => api.post('/auth/register', data),
+    getUsers: (config) => api.get('/auth/users', config),
+    updateUserAccess: (id, data) => api.put(`/auth/users/${id}`, data),
+    deleteUser: (id) => api.delete(`/auth/users/${id}`),
+    approveUser: (id) => api.post(`/auth/users/${id}/approve`),
+    rejectUser: (id) => api.post(`/auth/users/${id}/reject`),
 };
 
 // ─── Dashboard ───────────────────────────────────────────────

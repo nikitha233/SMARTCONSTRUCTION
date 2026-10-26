@@ -4,7 +4,7 @@ import Sidebar from '../components/Sidebar';
 import TopHeader from '../components/TopHeader';
 
 const routeTitles = {
-    '/': { title: 'Dashboard', subtitle: 'Welcome to BuildSmart' },
+    '/dashboard': { title: 'Dashboard', subtitle: 'Your role-based BuildSmart overview' },
     '/projects': { title: 'Projects', subtitle: 'Manage construction projects' },
     '/stages': { title: 'Construction Stages', subtitle: 'Track project stages' },
     '/progress': { title: 'Progress Updates', subtitle: 'Daily site progress reports' },
@@ -15,6 +15,8 @@ const routeTitles = {
     '/expenses': { title: 'Expenses', subtitle: 'Project expenditure' },
     '/budget': { title: 'Budget Overview', subtitle: 'Financial tracking' },
     '/reports': { title: 'Reports', subtitle: 'Analytics & exports' },
+    '/user-access': { title: 'User access', subtitle: 'Review pending requests and staff accounts' },
+    '/settings': { title: 'Settings', subtitle: 'Manage profile, notification alerts, and system preferences' },
 };
 
 export default function AppLayout() {

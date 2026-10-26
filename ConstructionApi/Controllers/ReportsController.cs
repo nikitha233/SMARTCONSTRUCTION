@@ -7,7 +7,7 @@ namespace ConstructionApi.Controllers;
 
 [ApiController]
 [Route("api/reports")]
-[Authorize]
+[Authorize(Roles = "Admin,ProjectManager")]
 public class ReportsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -18,6 +18,8 @@ public class ReportsController : ControllerBase
     {
         var query = _db.Projects.AsNoTracking().AsQueryable();
         if (projectId.HasValue) query = query.Where(p => p.Id == projectId.Value);
+        if (fromDate.HasValue) query = query.Where(p => p.StartDate >= fromDate.Value.Date);
+        if (toDate.HasValue) query = query.Where(p => p.StartDate.Date <= toDate.Value.Date);
 
         var report = await query.Select(p => new
         {

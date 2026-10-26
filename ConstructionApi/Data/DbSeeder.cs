@@ -33,7 +33,11 @@ public static class DbSeeder
         foreach (var role in roles)
         {
             if (!await roleManager.RoleExistsAsync(role))
-                await roleManager.CreateAsync(new IdentityRole(role));
+            {
+                var result = await roleManager.CreateAsync(new IdentityRole(role));
+                if (!result.Succeeded)
+                    throw new InvalidOperationException($"Could not create the {role} role: {string.Join(", ", result.Errors.Select(error => error.Description))}");
+            }
         }
 
         // Deactivate accounts created by older versions with published demo passwords.
@@ -52,6 +56,16 @@ public static class DbSeeder
                 legacyUser.IsActive = false;
                 await userManager.UpdateAsync(legacyUser);
             }
+        }
+
+        // Ensure all registered user accounts are active (instant access for everyone)
+        var pendingUsers = await userManager.Users
+            .Where(u => !u.IsActive && !legacyDemoEmails.Contains(u.Email))
+            .ToListAsync();
+        foreach (var u in pendingUsers)
+        {
+            u.IsActive = true;
+            await userManager.UpdateAsync(u);
         }
 
         // A development administrator is created only when explicitly enabled through local secrets.
@@ -185,7 +199,7 @@ public static class DbSeeder
 
     private static async Task SeedUser(UserManager<ApplicationUser> userManager, string email, string password, string fullName, string role)
     {
-        if (await userManager.FindByEmailAsync(email) == null)
+        if (await userManager.FindByEmailAsync(email) is null)
         {
             var user = new ApplicationUser
             {
@@ -196,8 +210,12 @@ public static class DbSeeder
                 EmailConfirmed = true
             };
             var result = await userManager.CreateAsync(user, password);
-            if (result.Succeeded)
-                await userManager.AddToRoleAsync(user, role);
+            if (!result.Succeeded)
+                throw new InvalidOperationException($"Could not create the development administrator: {string.Join(", ", result.Errors.Select(error => error.Description))}");
+
+            var roleResult = await userManager.AddToRoleAsync(user, role);
+            if (!roleResult.Succeeded)
+                throw new InvalidOperationException($"Could not assign the {role} role: {string.Join(", ", roleResult.Errors.Select(error => error.Description))}");
         }
     }
 }
